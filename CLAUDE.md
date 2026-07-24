@@ -10,6 +10,13 @@ The project emphasizes modular design, scalability, and clean separation of resp
 
 This project is intended as both a learning exercise in Information Retrieval (IR) and a production-quality portfolio project demonstrating backend engineering, database design, distributed systems concepts, and full-stack web development.
 
+# Project Plan
+
+The full phased implementation plan — architecture diagram, data model, and each
+phase's subphases/dependencies/key decisions — lives in `docs/project-plan.md`. It
+has a **Status** section at the top tracking which phases are actually done; check
+it before assuming what exists.
+
 # Core Features
 
 - Distributed-style web crawler with configurable concurrency
