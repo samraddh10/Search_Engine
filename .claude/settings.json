@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git fetch *)"
+      "Bash(git fetch *)",
+      "Bash(git commit *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
