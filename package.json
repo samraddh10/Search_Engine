@@ -9,11 +9,13 @@
   ],
   "scripts": {
     "postinstall": "npm run build --workspace=shared",
+    "dev:shared": "npm run dev --workspace=shared",
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
     "build:shared": "npm run build --workspace=shared",
     "build:server": "npm run build --workspace=server",
     "build:client": "npm run build --workspace=client",
-    "build": "npm run build:shared && npm run build:server && npm run build:client"
+    "build": "npm run build:shared && npm run build:server && npm run build:client",
+    "typecheck": "npm run typecheck --workspace=shared && npm run typecheck --workspace=server && npm run typecheck --workspace=client"
   }
 }
