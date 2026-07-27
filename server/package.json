@@ -9,9 +9,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "migrate": "node-pg-migrate up -m src/db/migrations --envPath .env",
-    "migrate:down": "node-pg-migrate down -m src/db/migrations --envPath .env",
-    "migrate:create": "node-pg-migrate create -m src/db/migrations -j js",
+    "migrate": "node-pg-migrate up -m db/migrations --envPath .env",
+    "migrate:down": "node-pg-migrate down -m db/migrations --envPath .env",
+    "migrate:create": "node-pg-migrate create -m db/migrations -j js",
     "seed": "tsx src/db/seed.ts"
   },
   "dependencies": {

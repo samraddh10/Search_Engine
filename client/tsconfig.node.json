@@ -7,7 +7,7 @@
     "skipLibCheck": true,
     "strict": true,
 
-    /* Bundler mode */
+    /* Node mode: this project only type-checks vite.config.ts, which Node loads */
     "module": "nodenext",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
