@@ -2,18 +2,24 @@
   "name": "server",
   "private": true,
   "version": "1.0.0",
+  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrate": "node-pg-migrate up -m src/db/migrations --envPath .env",
+    "migrate:down": "node-pg-migrate down -m src/db/migrations --envPath .env",
+    "migrate:create": "node-pg-migrate create -m src/db/migrations -j js",
+    "seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "ioredis": "^5.11.1",
+    "node-pg-migrate": "^9.0.0",
     "pg": "^8.22.0",
     "shared": "*",
     "zod": "^3.23.8"

@@ -1,7 +1,7 @@
-import app from "./api/server";
-import { config } from "./config";
-import { closePg } from "./db/pg";
-import { closeRedis, connectRedis } from "./db/redis";
+import app from "./api/server.js";
+import { config } from "./config.js";
+import { closePg } from "./db/pg.js";
+import { closeRedis, connectRedis } from "./db/redis.js";
 
 async function main() {
   //no-op when REDIS_URL isn't set — see db/redis.ts for why that's a valid state

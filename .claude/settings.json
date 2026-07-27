@@ -7,7 +7,8 @@
       "PowerShell(git --% diff HEAD -- server/)",
       "PowerShell(npm run typecheck)",
       "PowerShell(git reset -q)",
-      "PowerShell(git add server/.env.example server/src/api/server.ts server/src/config.ts server/src/db/redis.ts server/src/index.ts)"
+      "PowerShell(git add server/.env.example server/src/api/server.ts server/src/config.ts server/src/db/redis.ts server/src/index.ts)",
+      "PowerShell(git add -A -- . ':!docs')"
     ]
   }
 }

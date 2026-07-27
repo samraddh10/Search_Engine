@@ -1,8 +1,8 @@
 import cors from "cors";
 import express, { Request, Response } from "express";
 import { DEFAULT_PAGE_SIZE } from "shared";
-import { checkPgHealth } from "../db/pg";
-import { checkRedisHealth } from "../db/redis";
+import { checkPgHealth } from "../db/pg.js";
+import { checkRedisHealth } from "../db/redis.js";
 
 const app = express();
 

@@ -1,5 +1,7 @@
-import Redis from "ioredis";
-import { config } from "../config";
+// Named import, not default: under NodeNext, ioredis's CJS `export =` shape doesn't
+// resolve to a constructable default. `{ Redis }` is the form ioredis v5 documents.
+import { Redis } from "ioredis";
+import { config } from "../config.js";
 
 // Redis is optional. It backs the crawl frontier + robots cache, which only run in the
 // local/offline crawl job; the hosted API has no Redis at all. So this module exports a
