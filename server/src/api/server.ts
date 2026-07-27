@@ -11,7 +11,10 @@ app.use(express.json());
 
 app.get("/api/health", async (_req: Request, res: Response) => {
   const [postgres, redis] = await Promise.all([checkPgHealth(), checkRedisHealth()]);
-  const ok = postgres && redis;
+  // Postgres is a hard dependency; Redis is not (it's crawl-only and absent when hosted).
+  // `redis !== false` treats "not_configured" as healthy but still fails a Redis that was
+  // configured and is now unreachable.
+  const ok = postgres && redis !== false;
 
   res.status(ok ? 200 : 503).json({
     status: ok ? "ok" : "degraded",

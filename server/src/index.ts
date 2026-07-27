@@ -1,10 +1,11 @@
 import app from "./api/server";
 import { config } from "./config";
 import { closePg } from "./db/pg";
-import { closeRedis, redisClient } from "./db/redis";
+import { closeRedis, connectRedis } from "./db/redis";
 
 async function main() {
-  await redisClient.connect();
+  //no-op when REDIS_URL isn't set — see db/redis.ts for why that's a valid state
+  await connectRedis();
 
   const server = app.listen(config.PORT, () => {
     console.log(`Server listening on http://localhost:${config.PORT}`);
@@ -27,7 +28,7 @@ async function main() {
 }
 //This is why main() was wrapped as its own function rather than run inline: 
 //main() returns a Promise, and if anything inside it throws — most likely,
-//await redisClient.connect() failing because Redis genuinely isn't reachable — 
+//await connectRedis() failing because a *configured* Redis isn't reachable —
 //that rejection is caught here explicitly. It logs the real error and exits with code 1
 main().catch((err) => {
   console.error("Failed to start server", err);
