@@ -14,5 +14,8 @@
     "declaration": false,
     "sourceMap": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Tests live beside the code they cover but must not reach dist/. tsconfig.test.json
+  // adds them back for type-checking, so excluding them here costs no coverage.
+  "exclude": ["src/**/*.test.ts"]
 }

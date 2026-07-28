@@ -10,7 +10,10 @@
       "PowerShell(git add server/.env.example server/src/api/server.ts server/src/config.ts server/src/db/redis.ts server/src/index.ts)",
       "PowerShell(git add -A -- . ':!docs')",
       "PowerShell(git push origin master)",
-      "PowerShell(git --% diff -- server/package.json server/src shared docker-compose.yml server/.env.example client/tsconfig.node.json)"
+      "PowerShell(git --% diff -- server/package.json server/src shared docker-compose.yml server/.env.example client/tsconfig.node.json)",
+      "PowerShell(git fetch origin)",
+      "PowerShell(git diff origin/master --stat; git --% diff origin/master -- .claude/settings.json; Get-ChildItem -Recurse -File docs | Select-Object -ExpandProperty FullName)",
+      "PowerShell(\"-----\")"
     ]
   }
 }

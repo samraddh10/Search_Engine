@@ -19,6 +19,7 @@
     "migrate": "npm run migrate --workspace=server",
     "migrate:down": "npm run migrate:down --workspace=server",
     "seed": "npm run seed --workspace=server --",
+    "test": "npm run test --workspace=server",
     "typecheck": "npm run typecheck --workspace=shared && npm run typecheck --workspace=server && npm run typecheck --workspace=client"
   }
 }

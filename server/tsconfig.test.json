@@ -1,0 +1,13 @@
+// Type-checking config: the same compiler settings as the build, widened to cover the
+// test files, the Vitest global setup, and vitest.config.ts — none of which belong in
+// dist/, but all of which should still fail CI if they stop compiling.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // The build pins rootDir to src/; here the program deliberately reaches outside it.
+    "rootDir": "."
+  },
+  "include": ["src", "test", "vitest.config.ts"],
+  "exclude": []
+}
