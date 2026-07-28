@@ -8,7 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "typecheck": "tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "migrate": "node-pg-migrate up -m db/migrations --envPath .env",

@@ -13,7 +13,11 @@
       "PowerShell(git --% diff -- server/package.json server/src shared docker-compose.yml server/.env.example client/tsconfig.node.json)",
       "PowerShell(git fetch origin)",
       "PowerShell(git diff origin/master --stat; git --% diff origin/master -- .claude/settings.json; Get-ChildItem -Recurse -File docs | Select-Object -ExpandProperty FullName)",
-      "PowerShell(\"-----\")"
+      "PowerShell(\"-----\")",
+      "PowerShell(git rm --cached server/.env.test --quiet)",
+      "PowerShell(git check-ignore -v server/.env.test)",
+      "PowerShell(npm run typecheck --workspace=server)",
+      "PowerShell(npm test --workspace=server)"
     ]
   }
 }

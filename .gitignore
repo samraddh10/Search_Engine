@@ -4,6 +4,7 @@ dist-ssr/
 build/
 .env
 .env.local
+.env.test
 *.local
 *.log
 npm-debug.log*

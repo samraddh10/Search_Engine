@@ -6,7 +6,13 @@ import { defineConfig } from "vitest/config";
 const here = dirname(fileURLToPath(import.meta.url));
 const envTestPath = join(here, ".env.test");
 
-const testEnv = loadEnv({ path: envTestPath }).parsed ?? {};
+const parsed = loadEnv({ path: envTestPath }).parsed;
+if (!parsed) {
+  throw new Error(
+    `Missing ${envTestPath}. Copy server/.env.test.example to server/.env.test to set up the test database.`,
+  );
+}
+const testEnv = parsed;
 
 export default defineConfig({
   test: {
