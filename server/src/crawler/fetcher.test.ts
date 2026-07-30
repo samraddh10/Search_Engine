@@ -190,12 +190,9 @@ describe("fetchPage — redirects", () => {
 //"Guards" are safety checks meant to prevent the crawler from wasting resources or ending up with data it can't use.
 describe("fetchPage — guards", () => {
   //Test 1 — skip non-HTML content
-  it("skips non-HTML without downloading the body", async () => {
-    let bodyWasRequested = false;
-
+  it("skips non-HTML content", async () => {
     const origin = await startServer((_req, res) => {
       res.writeHead(200, { "content-type": "application/pdf" });
-      bodyWasRequested = true;
       res.end(Buffer.alloc(1024));
     });
 
@@ -206,13 +203,14 @@ describe("fetchPage — guards", () => {
 
     expect(result.reason).toBe("unsupported-content-type");
     expect(result.retryable).toBe(false);
-    expect(bodyWasRequested).toBe(true);
   });
 
   //Test 2 — missing Content-Type
+  //No content-type header at all: Node doesn't add one unless asked, so this is the genuine
+  //absent-header case rather than an empty-string stand-in.
   it("treats a missing Content-Type as unsupported rather than guessing HTML", async () => {
     const origin = await startServer((_req, res) => {
-      res.writeHead(200, { "content-type": "" });
+      res.writeHead(200);
       res.end("plain");
     });
 
@@ -384,6 +382,76 @@ describe("fetchPage — retries", () => {
     expect(hits).toBe(1);
     expect(result.attempts).toBe(1);
     expect(result.retryable).toBe(true);
+    //The wait the server asked for is handed back rather than swallowed. Without this the
+    //scheduler would see retryable: true and immediately re-hit a host that asked for an
+    //hour — politeness locally, rudeness globally.
+    expect(result.retryAfterMs).toBe(3_600_000);
+  });
+
+  //Test 6 — Retry-After given as an HTTP date instead of a number of seconds
+  it("accepts Retry-After as an HTTP date", async () => {
+    let hits = 0;
+
+    const origin = await startServer((_req, res) => {
+      hits += 1;
+      if (hits === 1) {
+        res.writeHead(429, {
+          //HTTP dates have one-second granularity, so this resolves to a delay somewhere
+          //between 0 and 1000ms — short enough to wait for, and it exercises the
+          //Date.parse branch rather than the numeric one.
+          "retry-after": new Date(Date.now() + 1000).toUTCString(),
+          "content-type": "text/html",
+        });
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(html("after the date"));
+    });
+
+    const result = await fetchPage(origin, { baseBackoffMs: 0 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempts).toBe(2);
+  });
+
+  //Test 7 — 501 is the one 5xx we don't retry
+  it("does not retry a 501, unlike other 5xx statuses", async () => {
+    let hits = 0;
+
+    const origin = await startServer((_req, res) => {
+      hits += 1;
+      res.writeHead(501, { "content-type": "text/html" });
+      res.end();
+    });
+
+    const result = await fetchPage(origin, { maxAttempts: 3, baseBackoffMs: 0 });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    //An unimplemented method will still be unimplemented on the next attempt.
+    expect(hits).toBe(1);
+    expect(result.retryable).toBe(false);
+  });
+
+  //Test 8 — nothing listening on the port at all
+  it("classifies a refused connection as a retryable network failure", async () => {
+    //Start a server purely to be handed a port the OS considers free, then shut it down so
+    //nothing is listening there. Connection-refused is the most common real-world crawl
+    //failure, and the branch deciding it's worth retrying otherwise had no test.
+    const origin = await startServer((_req, res) => res.end());
+    const server = servers.pop();
+    await new Promise<void>((resolve) => server?.close(() => resolve()));
+
+    const result = await fetchPage(origin, { maxAttempts: 1, baseBackoffMs: 0 });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    expect(result.reason).toBe("network");
+    expect(result.retryable).toBe(true);
   });
 });
 
@@ -440,5 +508,31 @@ describe("fetchPage — cancellation", () => {
     expect(result.reason).toBe("aborted");
     expect(result.retryable).toBe(false);
     expect(result.attempts).toBe(1);
+  });
+
+  //Test 4 — abort landing in the gap between attempts, not during a request
+  it("abandons a pending backoff instead of waiting it out", async () => {
+    const origin = await startServer((_req, res) => {
+      res.writeHead(503, { "content-type": "text/html" });
+      res.end();
+    });
+
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50).unref();
+
+    //A 5s base backoff means the first retry is scheduled 2.5–5s out. If the sleep ignored
+    //the signal, this call could only return after sitting through that.
+    const result = await fetchPage(origin, {
+      signal: controller.signal,
+      baseBackoffMs: 5000,
+      maxAttempts: 3,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    expect(result.reason).toBe("aborted");
+    expect(result.retryable).toBe(false);
+    expect(result.elapsedMs).toBeLessThan(1000);
   });
 });

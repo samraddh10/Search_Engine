@@ -22,6 +22,8 @@ export interface FetchOptions {
   maxBytes?: number;
   maxRedirects?: number;
   baseBackoffMs?: number;
+  maxBackoffMs?: number;
+  maxRetryAfterMs?: number;
   signal?: AbortSignal;
 }
 
@@ -59,32 +61,25 @@ export interface FetchFailure {
   retryable: boolean;
   status?: number;
   message: string;
+  //How long the server asked us to wait, when it said so (Retry-After on a 429/5xx).
+  //Surfaced rather than swallowed: fetchPage refuses to block for a Retry-After longer
+  //than maxRetryAfterMs, so without this field the caller would see retryable: true and
+  //immediately re-hit a host that explicitly asked for an hour.
+  retryAfterMs?: number;
   attempts: number;
   elapsedMs: number;
 }
 
 export type FetchResult = FetchSuccess | FetchFailure;
 
-//AttemptOutcome (defined right after) is a near-identical internal-only version of this same union,
-// used by the helper functions before they're assembled into the final FetchResult
+//AttemptOutcome is the internal-only version of the same union — what one attempt produced
+// before the retry loop stamps on the fields only it can know (which URL was originally
+// requested, how many attempts it took, how long the whole call ran). Derived with Omit
+// rather than written out again, so a field added to FetchResult can't be silently
+// forgotten here.
 type AttemptOutcome =
-  | {
-      ok: true;
-      url: string;
-      status: number;
-      contentType: string;
-      body: string;
-      bytes: number;
-    }
-  | {
-      ok: false;
-      url: string;
-      reason: FetchFailureReason;
-      retryable: boolean;
-      status?: number;
-      message: string;
-      retryAfterMs?: number;
-    };
+  | ({ ok: true } & Omit<FetchSuccess, "ok" | "requestedUrl" | "attempts" | "elapsedMs">)
+  | ({ ok: false } & Omit<FetchFailure, "ok" | "requestedUrl" | "attempts" | "elapsedMs">);
 
 export async function fetchPage(
   requestedUrl: string,
@@ -96,6 +91,8 @@ export async function fetchPage(
     maxBytes = FETCH_DEFAULTS.maxBytes,
     maxRedirects = FETCH_DEFAULTS.maxRedirects,
     baseBackoffMs = FETCH_DEFAULTS.baseBackoffMs,
+    maxBackoffMs = FETCH_DEFAULTS.maxBackoffMs,
+    maxRetryAfterMs = FETCH_DEFAULTS.maxRetryAfterMs,
     signal,
   } = options;
 
@@ -131,38 +128,27 @@ export async function fetchPage(
       signal,
     });
 
+    //The attempt already carries every field that describes *what happened*; the loop only
+    //adds what it alone knows. Spreading beats copying field by field — a new field on
+    //FetchResult flows through without another edit here.
     if (outcome.ok) {
-      return {
-        ok: true,
-        requestedUrl,
-        url: outcome.url,
-        status: outcome.status,
-        contentType: outcome.contentType,
-        body: outcome.body,
-        bytes: outcome.bytes,
-        attempts,
-        elapsedMs: elapsed(),
-      };
+      return { ...outcome, requestedUrl, attempts, elapsedMs: elapsed() };
     }
 
-    const waitMs = retryDelayMs(outcome, attempts, baseBackoffMs);
-    const giveUp = !outcome.retryable || attempts >= maxAttempts || waitMs === null;
+    //Computed only when a retry is actually on the table, so a dead URL doesn't pay for a
+    //backoff calculation whose answer gets discarded.
+    const outOfAttempts = !outcome.retryable || attempts >= maxAttempts;
+    const waitMs = outOfAttempts
+      ? null
+      : retryDelayMs(outcome, attempts, { baseBackoffMs, maxBackoffMs, maxRetryAfterMs });
 
-    if (giveUp) {
-      return {
-        ok: false,
-        requestedUrl,
-        url: outcome.url,
-        reason: outcome.reason,
-        retryable: outcome.retryable,
-        ...(outcome.status === undefined ? {} : { status: outcome.status }),
-        message: outcome.message,
-        attempts,
-        elapsedMs: elapsed(),
-      };
+    //waitMs === null also covers "the server asked for longer than we're willing to wait" —
+    //outcome.retryAfterMs rides along in the spread so the caller can schedule it properly.
+    if (outOfAttempts || waitMs === null) {
+      return { ...outcome, requestedUrl, attempts, elapsedMs: elapsed() };
     }
 
-    await sleep(waitMs);
+    await sleep(waitMs, signal);
   }
 }
 
@@ -273,12 +259,11 @@ async function attemptFetch(
         retryable,
         status: response.status,
         message: `HTTP ${response.status}`,
-        //The spread trick again: ...(retryable ? { retryAfterMs: ... } : {}) — 
-        // if the error is retryable, also grab the Retry-After header (a hint from the server about how long to wait before trying again)
-        //  and include it; if not retryable, add nothing extra.
-        ...(retryable
-          ? { retryAfterMs: parseRetryAfter(response.headers.get("retry-after")) }
-          : {}),
+        //Retry-After is a hint from the server about how long to wait. Only meaningful when
+        //the status is one we'd retry at all, so a 404 doesn't carry a wait time.
+        retryAfterMs: retryable
+          ? parseRetryAfter(response.headers.get("retry-after"))
+          : undefined,
       };
     }
 
@@ -363,17 +348,18 @@ async function readCapped(
   for (;;) {
   //reader.read() — asks for the next chunk of data. It returns an object with done (a boolean: true once there's no more data)
   // and value (the actual chunk of bytes, if any).
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
+  //Kept as one object rather than destructured: the result is a discriminated union, so
+  //`chunk.done` narrows `chunk.value` to a real Uint8Array and no undefined check is needed.
+    const chunk = await reader.read();
+    if (chunk.done) break;
 
-    total += value.byteLength;
+    total += chunk.value.byteLength;
     if (total > maxBytes) {
       await reader.cancel();
       return "too-large";
     }
 
-    chunks.push(value);
+    chunks.push(chunk.value);
   }
 
 //If we finished reading successfully, we now have a bunch of separate small chunks that need to be combined into one continuous array:
@@ -427,20 +413,21 @@ function describeFetchError(
   };
 }
 
-//retryDelayMs — how long to wait before trying again
+//retryDelayMs — how long to wait before trying again, or null to stop trying
 function retryDelayMs(
   outcome: Extract<AttemptOutcome, { ok: false }>,
   attempt: number,
-  baseBackoffMs: number,
+  limits: { baseBackoffMs: number; maxBackoffMs: number; maxRetryAfterMs: number },
 ): number | null {
   if (outcome.retryAfterMs !== undefined) {
-    return outcome.retryAfterMs > FETCH_DEFAULTS.maxRetryAfterMs
-      ? null
-      : outcome.retryAfterMs;
+    return outcome.retryAfterMs > limits.maxRetryAfterMs ? null : outcome.retryAfterMs;
   }
 
 //Otherwise, calculate a wait time ourselves:
-  const capped = Math.min(baseBackoffMs * 2 ** (attempt - 1), FETCH_DEFAULTS.maxBackoffMs);
+  const capped = Math.min(
+    limits.baseBackoffMs * 2 ** (attempt - 1),
+    limits.maxBackoffMs,
+  );
   return capped / 2 + Math.random() * (capped / 2);
 }
 
@@ -475,7 +462,9 @@ function normalizeContentType(header: string | null): string {
 function parseCrawlableUrl(value: string, base?: URL): URL | null {
   let url: URL;
   try {
-    url = base ? new URL(value, base) : new URL(value);
+    //An undefined base behaves exactly like passing no base at all, so this one call covers
+    //both the initial URL and a relative Location header.
+    url = new URL(value, base);
   } catch {
     return null;
   }
@@ -494,9 +483,27 @@ async function discardBody(response: Response): Promise<void> {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  //setTimeout(callback, ms) — a built-in JavaScript function that runs callback after waiting ms milliseconds.
-  //new Promise((resolve) => ...) — creates a promise manually. resolve is a function that, when called, marks 
-  // the promise as "successfully finished."
-  return new Promise((resolve) => setTimeout(resolve, ms));
+//sleep — the pause between retry attempts, abandoned early if the caller cancels.
+//Without the signal a shutdown would still have to wait out the full backoff (up to
+//maxBackoffMs) before the next attempt could notice it was cancelled — so Ctrl-C in the
+//1.7 CLI would appear to hang. Resolving early rather than rejecting keeps the caller
+//simple: the next attempt sees the aborted signal and reports "aborted" itself.
+//The timer is deliberately *not* unref'd — an unref'd backoff would let a process whose
+//only pending work is this sleep exit silently, leaving the fetch unresolved.
+function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  if (signal?.aborted) return Promise.resolve();
+
+  //new Promise((resolve) => ...) — creates a promise manually. resolve is a function that,
+  // when called, marks the promise as "successfully finished."
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+
+    //setTimeout(callback, ms) — a built-in JavaScript function that runs callback after waiting ms milliseconds.
+    const timer = setTimeout(finish, ms);
+    signal?.addEventListener("abort", finish, { once: true });
+  });
 }
