@@ -1,7 +1,18 @@
-//sent on every request so site owners can identify the bot
-const USER_AGENT ="SearchEngine2Bot/0.1 (+https://github.com/search-engine2; educational crawler)";
+//The bare product token. robots.txt groups are written `User-agent: SearchEngine2Bot`, and
+//matching happens on that token alone — the full header below would never match one. The
+//header is *built* from the token so the two can't drift apart; exported because robots.ts
+//needs the token and duplicating the string there is how they'd silently disagree.
+export const USER_AGENT_TOKEN = "SearchEngine2Bot";
 
-const HTML_CONTENT_TYPES = new Set(["text/html", "application/xhtml+xml"]);
+//sent on every request so site owners can identify the bot
+export const USER_AGENT =
+  `${USER_AGENT_TOKEN}/0.1 (+https://github.com/search-engine2; educational crawler)`;
+
+//The default allowlist — what a *page* fetch accepts. Overridable per call (see
+//FetchOptions.allowedContentTypes) because robots.txt is text/plain, and a plain-text file
+//carries none of the "arbitrary binary reaching the Phase 2 tokenizer" risk that motivated
+//this guard for pages.
+export const HTML_CONTENT_TYPES = ["text/html", "application/xhtml+xml"] as const;
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -13,6 +24,7 @@ export const FETCH_DEFAULTS = {
   baseBackoffMs: 500,
   maxBackoffMs: 8_000,
   maxRetryAfterMs: 30_000,
+  allowedContentTypes: HTML_CONTENT_TYPES,
 } as const;
 
 //Every field is optional (?), this ? is the reason
@@ -24,6 +36,9 @@ export interface FetchOptions {
   baseBackoffMs?: number;
   maxBackoffMs?: number;
   maxRetryAfterMs?: number;
+  //Normalized (lowercase, no ";charset=...") content types this call will accept. An empty
+  //string in the list means "accept a response that declared no Content-Type at all".
+  allowedContentTypes?: readonly string[];
   signal?: AbortSignal;
 }
 
@@ -93,6 +108,7 @@ export async function fetchPage(
     baseBackoffMs = FETCH_DEFAULTS.baseBackoffMs,
     maxBackoffMs = FETCH_DEFAULTS.maxBackoffMs,
     maxRetryAfterMs = FETCH_DEFAULTS.maxRetryAfterMs,
+    allowedContentTypes = FETCH_DEFAULTS.allowedContentTypes,
     signal,
   } = options;
 
@@ -125,6 +141,7 @@ export async function fetchPage(
       timeoutMs,
       maxBytes,
       maxRedirects,
+      allowedContentTypes,
       signal,
     });
 
@@ -158,6 +175,7 @@ async function attemptFetch(
     timeoutMs: number;
     maxBytes: number;
     maxRedirects: number;
+    allowedContentTypes: readonly string[];
     signal: AbortSignal | undefined;
   },
 ): Promise<AttemptOutcome> {
@@ -268,9 +286,11 @@ async function attemptFetch(
     }
 
   //The three safety guards, once we get a good response
-  //Guard 1 — is it actually HTML?
+  //Guard 1 — is it a content type this call asked for? (HTML for pages, text/plain for robots.txt)
+  //A plain array `includes` rather than a Set: the list is one or two entries, so building a
+  //Set per call would cost more than the scan it replaces.
     const contentType = normalizeContentType(response.headers.get("content-type"));
-    if (!HTML_CONTENT_TYPES.has(contentType)) {
+    if (!opts.allowedContentTypes.includes(contentType)) {
       await discardBody(response);
       return {
         ok: false,

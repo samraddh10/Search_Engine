@@ -17,7 +17,9 @@
       "PowerShell(git rm --cached server/.env.test --quiet)",
       "PowerShell(git check-ignore -v server/.env.test)",
       "PowerShell(npm run typecheck --workspace=server)",
-      "PowerShell(npm test --workspace=server)"
+      "PowerShell(npm test --workspace=server)",
+      "PowerShell(git add server/src/crawler/fetcher.ts server/src/crawler/fetcher.test.ts)",
+      "PowerShell(git add .claude/settings.json package-lock.json server/package.json server/src/crawler/fetcher.ts server/src/crawler/robots.ts server/src/crawler/robots.test.ts)"
     ]
   }
 }
