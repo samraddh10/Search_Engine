@@ -2,6 +2,7 @@
 import robotsParserModule from "robots-parser";
 import { redisClient } from "../db/redis.js";
 import { fetchPage, USER_AGENT_TOKEN, type FetchFailure } from "./fetcher.js";
+import { parseHttpUrl } from "./url.js";
 
 interface Robot {
   isAllowed(url: string, ua?: string): boolean | undefined;
@@ -332,17 +333,5 @@ function isEnvelope(value: unknown): value is RobotsEnvelope {
   );
 }
 
-//This function's job: take a raw piece of text and check whether it's actually a valid, usable web address — specifically one that starts with http:// or https://
-//  — handing back a real, structured URL object if it is, or null if it isn't.
-function parseHttpUrl(value: string): URL | null {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return null;
-  }
-
-  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-
-  return url;
-}
+//The local parseHttpUrl that used to live here moved to crawler/url.ts in 1.3, where the
+//parser and the 1.4 frontier need the same check. Imported rather than duplicated.

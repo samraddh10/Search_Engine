@@ -1,3 +1,6 @@
+import { decodeBody, parseCharsetParam } from "./charset.js";
+import { parseHttpUrl } from "./url.js";
+
 //The bare product token. robots.txt groups are written `User-agent: SearchEngine2Bot`, and
 //matching happens on that token alone — the full header below would never match one. The
 //header is *built* from the token so the two can't drift apart; exported because robots.ts
@@ -62,7 +65,14 @@ export interface FetchSuccess {
   url: string;
   status: number;
   contentType: string;
+  //The encoding the body was actually decoded with, in TextDecoder's canonical spelling
+  //(so a page declaring "LATIN1" reports "windows-1252"). Chosen by crawler/charset.ts —
+  //see there for why the decision can't live in the 1.3 parser as originally planned.
+  charset: string;
   body: string;
+  //The size of the *undecoded* response, which is what the maxBytes cap measures. Not the
+  //length of `body`: one UTF-8 character can be four bytes, so the two differ on any page
+  //that isn't pure ASCII.
   bytes: number;
   attempts: number;
   elapsedMs: number;
@@ -336,6 +346,12 @@ async function attemptFetch(
       return describeFetchError(error, current, opts.signal);
     }
 
+    //Decoding is the last step, and the only one that needs to know the encoding. The raw
+    //bytes exist nowhere else after this point, which is exactly why the choice has to be
+    //made here rather than downstream: decoding is lossy, so a wrong guess here can't be
+    //corrected by the parser later.
+    const decoded = decodeBody(bytes, parseCharsetParam(response.headers.get("content-type")));
+
     return {
       ok: true,
     //current.href — the full text of the final URL (after all redirects)
@@ -343,9 +359,8 @@ async function attemptFetch(
       url: current.href,
       status: response.status,
       contentType,
-    //new TextDecoder("utf-8").decode(bytes) — the downloaded data (bytes) is currently raw numbers, not readable text. 
-    // TextDecoder converts those raw bytes into an actual JavaScript string, assuming UTF-8 encoding
-      body: new TextDecoder("utf-8").decode(bytes),
+      charset: decoded.charset,
+      body: decoded.text,
       bytes: bytes.byteLength,
     };
   }
@@ -478,21 +493,11 @@ function normalizeContentType(header: string | null): string {
   return header.split(";", 1)[0].trim().toLowerCase();
 }
 
-//parseCrawlableUrl — safely build and validate a URL
-function parseCrawlableUrl(value: string, base?: URL): URL | null {
-  let url: URL;
-  try {
-    //An undefined base behaves exactly like passing no base at all, so this one call covers
-    //both the initial URL and a relative Location header.
-    url = new URL(value, base);
-  } catch {
-    return null;
-  }
-
-  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-
-  return url;
-}
+//parseCrawlableUrl — safely build and validate a URL.
+//Now a thin alias over crawler/url.ts, which grew the identical function for link
+//extraction in 1.3. Three private copies of "is this an http(s) URL?" is three chances for
+//the crawler and the frontier to disagree about what counts as crawlable.
+const parseCrawlableUrl = parseHttpUrl;
 
 //Promise<void> — a promise that doesn't resolve to any meaningful value
 async function discardBody(response: Response): Promise<void> {

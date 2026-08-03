@@ -536,3 +536,52 @@ describe("fetchPage — cancellation", () => {
     expect(result.elapsedMs).toBeLessThan(1000);
   });
 });
+
+//Charset handling arrived with 1.3 (see crawler/charset.ts for why it lives there rather
+//than in the parser). charset.test.ts covers the decision table against raw byte arrays;
+//these two cover the wiring — that the header actually reaches the decoder and that the
+//decoded string comes back over a real socket, not just out of a unit test's Uint8Array.
+describe("fetchPage — charset", () => {
+  it("decodes a legacy encoding declared in the Content-Type header", async () => {
+    //0xE9 is "é" in windows-1252 and an invalid lone continuation byte in UTF-8, so a
+    //decode that ignored the header would produce U+FFFD here instead.
+    const body = Buffer.from([0x3c, 0x70, 0x3e, 0xe9, 0x74, 0xe9, 0x3c, 0x2f, 0x70, 0x3e]);
+
+    const origin = await startServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/html; charset=iso-8859-1" });
+      res.end(body);
+    });
+
+    const result = await fetchPage(`${origin}/legacy`);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.body).toBe("<p>été</p>");
+    //Canonical spelling, not the label the server sent: iso-8859-1 *is* windows-1252.
+    expect(result.charset).toBe("windows-1252");
+    //`bytes` measures the undecoded response, so it stays 10 even though the decoded
+    //string is shorter in characters than it was in bytes.
+    expect(result.bytes).toBe(body.byteLength);
+    expect(result.contentType).toBe("text/html");
+  });
+
+  it("falls back to a <meta charset> when the header is silent", async () => {
+    const body = Buffer.concat([
+      Buffer.from('<html><head><meta charset="windows-1252"></head><body><p>', "latin1"),
+      Buffer.from([0xe9]),
+      Buffer.from("</p></body></html>", "latin1"),
+    ]);
+
+    const origin = await startServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(body);
+    });
+
+    const result = await fetchPage(`${origin}/meta`);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.charset).toBe("windows-1252");
+    expect(result.body).toContain("<p>é</p>");
+  });
+});
