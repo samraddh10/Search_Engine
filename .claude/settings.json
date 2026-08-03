@@ -19,7 +19,9 @@
       "PowerShell(npm run typecheck --workspace=server)",
       "PowerShell(npm test --workspace=server)",
       "PowerShell(git add server/src/crawler/fetcher.ts server/src/crawler/fetcher.test.ts)",
-      "PowerShell(git add .claude/settings.json package-lock.json server/package.json server/src/crawler/fetcher.ts server/src/crawler/robots.ts server/src/crawler/robots.test.ts)"
+      "PowerShell(git add .claude/settings.json package-lock.json server/package.json server/src/crawler/fetcher.ts server/src/crawler/robots.ts server/src/crawler/robots.test.ts)",
+      "Read(//c/Users/shriy/Downloads/Search_Engine2/server/src/crawler/**)",
+      "Bash(git commit -m 'feat\\(crawler\\): add URL canonicalization, charset decoding, and HTML parsing *)"
     ]
   }
 }
