@@ -69,6 +69,24 @@ export function normalizeUrl(value: string, base?: string | URL): string | null 
   return url.href.length > MAX_URL_LENGTH ? null : url.href;
 }
 
+//The host as a *politeness and scope* identity, which is a different question from the one
+//normalizeUrl answers. normalizeUrl deliberately refuses to unify www/apex because a wrong
+//unification is unrecoverable — the page is simply never fetched. Here the asymmetry runs the
+//other way: nearly every site 301s one spelling to the other, so treating them as two hosts
+//would let an allowlist naming only one silently drop the redirect target (1.4), and would let
+//the scheduler hit one machine at twice the intended rate (1.5).
+//Other subdomains are NOT implied: docs.example.com is a different site's worth of content.
+export function canonicalHost(hostname: string): string {
+  const host = hostname.toLowerCase();
+  return host.startsWith("www.") ? host.slice(4) : host;
+}
+
+//The canonical host of a whole URL, or null if it isn't a usable http(s) URL.
+export function hostOf(value: string, base?: string | URL): string | null {
+  const url = parseHttpUrl(value, base);
+  return url ? canonicalHost(url.hostname) : null;
+}
+
 function compare(a: string, b: string): number {
   if (a < b) return -1;
   return a > b ? 1 : 0;

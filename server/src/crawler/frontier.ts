@@ -1,5 +1,5 @@
 import type { FrontierStore, QueuedUrl } from "./frontierStore.js";
-import { normalizeUrl, parseHttpUrl } from "./url.js";
+import { canonicalHost, normalizeUrl, parseHttpUrl } from "./url.js";
 
 export const FRONTIER_DEFAULTS = {
   maxDepth: 3,
@@ -201,8 +201,3 @@ const REJECTION_COUNTERS: Record<AddRejection, keyof FrontierStats> = {
   "queue-full": "queueFull",
   duplicate: "duplicate",
 };
-
-function canonicalHost(hostname: string): string {
-  const host = hostname.toLowerCase();
-  return host.startsWith("www.") ? host.slice(4) : host;
-}

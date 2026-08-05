@@ -47,15 +47,22 @@ export interface FetchOptions {
 
 //type (with the | symbol) can describe a union — "this value is one of several options.
 // " That's a completely different kind of description, and interface simply can't express it.
-export type FetchFailureReason =
-  | "invalid-url"
-  | "timeout"
-  | "network"
-  | "http-error"
-  | "too-many-redirects"
-  | "too-large"
-  | "unsupported-content-type"
-  | "aborted";
+//Written as a runtime array with the type *derived* from it, rather than as a bare union,
+//because 1.5's crawl summary tallies failures per reason and needs to enumerate them. A
+//hand-maintained second copy of the list over there would silently miss any reason added
+//here — the tally would just never count it.
+export const FETCH_FAILURE_REASONS = [
+  "invalid-url",
+  "timeout",
+  "network",
+  "http-error",
+  "too-many-redirects",
+  "too-large",
+  "unsupported-content-type",
+  "aborted",
+] as const;
+
+export type FetchFailureReason = (typeof FETCH_FAILURE_REASONS)[number];
 
   //interface describes the shape of an object 
   // — a thing with named properties, like { ok: true, status: 200, body: "..." }
