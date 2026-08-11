@@ -30,6 +30,33 @@ export interface CrawledPage {
   fetchedAt: Date;
 }
 
+/**
+ * Why a URL left the crawl without producing a page. `parse-failed` is not a
+ * `FetchFailureReason` — the bytes arrived, they just weren't usable HTML — so the union is
+ * widened here rather than in 1.1.
+ */
+export type CrawlFailureReason = FetchFailureReason | "parse-failed";
+
+/**
+ * Reported once per URL, and only when the crawl has *given up* on it: a retryable failure
+ * that still has requeues left is not a failure yet. Robots-blocked URLs are deliberately
+ * not reported — a disallow-all host would emit thousands of them, and being told not to
+ * fetch something is policy working, not an error.
+ */
+export interface CrawlFailure {
+  url: string;
+  depth: number;
+  reason: CrawlFailureReason;
+  status?: number;
+  detail: string;
+  retryable: boolean;
+  /**
+   * Scheduling rounds this URL cost — 1 plus the number of times it was requeued. Not
+   * `FetchFailure.attempts`, which counts HTTP requests inside a single `fetchPage` call.
+   */
+  rounds: number;
+}
+
 export type CrawlStopReason = "drained" | "max-pages" | "aborted";
 
 export interface CrawlSummary {
@@ -41,6 +68,7 @@ export interface CrawlSummary {
   gaveUp: number;
   robotsBlocked: number;
   parseFailed: number;
+  //requeued — how many URLs were put back in the queue for a retry.
   requeued: number;
   linksDiscovered: number;
   returnedToFrontier: number;
@@ -58,6 +86,8 @@ export interface CrawlOptions {
   defaultCrawlDelayMs?: number;
   maxRequeues?: number;
   onPage?: (page: CrawledPage) => void | Promise<void>;
+  onFailure?: (failure: CrawlFailure) => void | Promise<void>;
+  //onError? — called when a worker throws unexpectedly.
   onError?: (error: unknown, url: string) => void;
   signal?: AbortSignal;
   fetchOptions?: Omit<FetchOptions, "signal">;
@@ -76,6 +106,7 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
     defaultCrawlDelayMs = CRAWL_DEFAULTS.defaultCrawlDelayMs,
     maxRequeues = CRAWL_DEFAULTS.maxRequeues,
     onPage,
+    onFailure,
     onError,
     signal,
     fetchOptions,
@@ -94,6 +125,10 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
     fetched: 0,
     delivered: 0,
     failed: 0,
+    //FETCH_FAILURE_REASONS is presumably an array like ["timeout", "dns-error", "http-error", ...]. .map(reason => [reason, 0]) 
+    // turns that into an array of pairs: [["timeout", 0], ["dns-error", 0], ...]. Object.fromEntries(...) is a built-in JS function that turns an array of [key, value] pairs 
+    // into a plain object: { timeout: 0, "dns-error": 0, "http-error": 0, ... }. So instead of hand-writing every possible failure reason with : 0, it builds the zeroed-out 
+    // lookup table automatically from the single source-of-truth array — if fetcher.ts ever adds a new failure reason, this code doesn't need to change.
     failuresByReason: Object.fromEntries(
       FETCH_FAILURE_REASONS.map((reason) => [reason, 0]),
     ) as Record<FetchFailureReason, number>,
@@ -108,10 +143,12 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
     frontier: frontier.stats,
   };
 
+  //A flag: once the frontier tells us "I have nothing more right now," we remember that instead of asking it again on every single loop iteration
   let frontierDrained = false;
 
   for (const seed of seeds) {
     const added = await frontier.addSeed(seed);
+    //If anything got added, we make sure frontierDrained is false — there's real work now.
     if (added.added) frontierDrained = false;
   }
 
@@ -126,11 +163,13 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
       break;
     }
 
+    //If we already have concurrency (4) fetches running, don't start a 5th.
     if (active.size >= concurrency) {
       await settleOne();
       continue;
     }
 
+    //hosts.buffered is presumably a count of how many URLs are sitting in the HostScheduler's internal buffer
     if (hosts.buffered < concurrency && !frontierDrained) await refill();
 
     const dispatch = hosts.next();
@@ -164,6 +203,8 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
     break;
   }
 
+  //Even after break, some fetches might still be running (e.g. if we stopped because of maxPages or aborted, mid-flight requests were allowed to finish rather than being yanked). 
+  // Promise.allSettled waits for every one of them to finish — succeed or fail
   await Promise.allSettled(active);
 
   for (const entry of hosts.drain()) {
@@ -175,6 +216,10 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
 
   return summary;
 
+  //Figures out how many more URLs we'd like buffered (batchSize minus what's already there).
+  //If we're already full enough, do nothing. Otherwise ask the frontier for that many URLs.
+  //If it hands back zero, remember frontierDrained = true so we stop pestering it.
+  //Otherwise, give the batch to the HostScheduler so it can sort them by host.
   async function refill(): Promise<void> {
     const wanted = batchSize - hosts.buffered;
     if (wanted <= 0) return;
@@ -187,7 +232,7 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
 
     hosts.add(batch);
   }
-
+//This is where concurrency actually happens:
   function launch(entry: QueuedUrl): void {
     let task: Promise<void>;
 
@@ -203,17 +248,23 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
     active.add(task);
   }
 
+  //Waits for whichever currently-running task finishes first.
+  //The guard at the top exists because Promise.race on an empty collection never resolves at all
+  //it would hang the whole crawl forever if called with nothing running.
   async function settleOne(): Promise<void> {
     if (active.size === 0) return;
     await Promise.race(active);
   }
 
+  //This is the core logic for handling exactly one URL, start to finish.
   async function processOne(entry: QueuedUrl): Promise<void> {
     let cooldownMs = defaultCrawlDelayMs;
 
     try {
       const robots = await checkRobots(entry.url, { ...robotsOptions, signal });
 
+      //If we got cancelled while the robots check was running, checkRobots may have returned "not allowed" simply as a side effect of aborting — not because the site genuinely disallows it.
+      //So this checks the signal before trusting the robots answer, and if aborted, just hands the URL back untouched (no penalty, no "robots blocked" miscount) and stops.
       if (signal?.aborted) {
         await giveBack(entry);
         return;
@@ -237,9 +288,20 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
         const parsed = parseHtml(result.body, result.url, parseOptions);
         if (!parsed) {
           summary.parseFailed++;
+          await onFailure?.({
+            url: entry.url,
+            depth: entry.depth,
+            reason: "parse-failed",
+            status: result.status,
+            detail: `could not parse ${result.contentType || "response"} as HTML`,
+            retryable: false,
+            rounds: roundsFor(entry.url),
+          });
           return;
         }
 
+        //For every link found on the page, try adding it to the frontier at depth + 1 (one hop deeper than the current page), resolving any relative links against result.url
+        //If it was genuinely new (not a dupe), count it, and un-set frontierDrained — there's fresh work available now.
         for (const link of parsed.links) {
           const added = await frontier.add(link, { depth: entry.depth + 1, base: result.url });
           if (added.added) {
@@ -272,6 +334,13 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
         cooldownMs = Math.max(cooldownMs, result.retryAfterMs);
       }
 
+      // Read before the bump below: bumpRequeues() increments as a side effect of the
+      // retry decision, so asking afterwards counts this dispatch twice.
+      const rounds = roundsFor(entry.url);
+
+      //If this failure type is one fetchPage flagged as worth retrying (e.g. a timeout, a 503), and we haven't exceeded maxRequeues for this specific URL 
+      // (bumpRequeues increments the counter and returns the new total
+      //try putting it back in the frontier at its original depth. If that succeeds, count it and stop — this URL isn't "failed," it's just going around again later.
       if (result.retryable && bumpRequeues(entry.url) <= maxRequeues) {
         const requeued = await frontier.requeue(entry.url, { depth: entry.depth });
         if (requeued.added) {
@@ -284,11 +353,23 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
       summary.failed++;
       summary.failuresByReason[result.reason]++;
       if (result.retryable) summary.gaveUp++;
+
+      await onFailure?.({
+        url: entry.url,
+        depth: entry.depth,
+        reason: result.reason,
+        status: result.status,
+        detail: result.message,
+        retryable: result.retryable,
+        rounds,
+      });
     } finally {
       hosts.release(entry.url, cooldownMs);
     }
   }
 
+  //Puts a URL back into the frontier without going through bumpRequeues
+  //this is specifically for cases where the crawl itself gave up on the URL (shutdown/abort)
   async function giveBack(entry: QueuedUrl): Promise<boolean> {
     const result = await frontier.requeue(entry.url, { depth: entry.depth });
     if (result.added) frontierDrained = false;
@@ -296,14 +377,22 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
     return result.added;
   }
 
+  //Looks up the current requeue count for this URL in the Map (?? 0 if it's never been requeued before), adds one, saves it back, and returns the new total — used to enforce maxRequeues.
   function bumpRequeues(url: string): number {
     const next = (requeueCounts.get(url) ?? 0) + 1;
     requeueCounts.set(url, next);
 
     return next;
   }
+
+  // The first dispatch is a round the map never recorded — it only holds URLs that have
+  // already failed retryably — so the count is one more than the requeues.
+  function roundsFor(url: string): number {
+    return (requeueCounts.get(url) ?? 0) + 1;
+  }
 }
 
+//countdown(ms, signal) — the standalone timer helper
 function countdown(
   ms: number,
   signal?: AbortSignal,

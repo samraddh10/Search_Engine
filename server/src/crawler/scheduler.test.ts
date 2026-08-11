@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Frontier, hostsFromSeeds } from "./frontier.js";
 import { MemoryFrontierStore } from "./frontierStore.js";
 import { clearRobotsCache } from "./robots.js";
-import { crawl, type CrawledPage, type CrawlOptions, type CrawlSummary } from "./scheduler.js";
+import {
+  crawl,
+  type CrawledPage,
+  type CrawlFailure,
+  type CrawlOptions,
+  type CrawlSummary,
+} from "./scheduler.js";
 
 const servers: Server[] = [];
 
@@ -315,6 +321,104 @@ describe("crawl — failures and retries", () => {
     expect(summary.errors).toBe(2);
     expect(seen).toHaveLength(2);
     expect(summary.stoppedBecause).toBe("drained");
+  });
+});
+
+//onFailure is what 1.6 persists into crawl_errors, so what it does *not* report matters as
+//much as what it does: a row per robots-blocked URL on a disallow-all host would bury the
+//real failures, and a row for a URL that later succeeded would be a lie.
+describe("crawl — failure reporting", () => {
+  it("reports a non-retryable failure once, with its status", async () => {
+    const site = await startSite({ "/": page("/missing") });
+    const failures: CrawlFailure[] = [];
+
+    await run(site, { onFailure: (failure) => void failures.push(failure) });
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      url: `${site.origin}/missing`,
+      depth: 1,
+      reason: "http-error",
+      status: 404,
+      retryable: false,
+      rounds: 1,
+    });
+  });
+
+  it("reports a retryable failure only after the requeues are spent", async () => {
+    const site = await startSite({ "/": page("/broken"), "/broken": { status: 503, body: "" } });
+    const failures: CrawlFailure[] = [];
+
+    await run(site, { maxRequeues: 2, onFailure: (failure) => void failures.push(failure) });
+
+    expect(failures).toHaveLength(1);
+    //One report, but three dispatches — the count 1.6 writes to crawl_errors.attempts.
+    expect(failures[0]).toMatchObject({ reason: "http-error", retryable: true, rounds: 3 });
+  });
+
+  it("says nothing about a URL that succeeded on a later round", async () => {
+    const site = await startSite({
+      "/": page("/flaky"),
+      "/flaky": (hit) => (hit === 1 ? { status: 503, body: "" } : page()),
+    });
+    const failures: CrawlFailure[] = [];
+
+    const { summary } = await run(site, { onFailure: (failure) => void failures.push(failure) });
+
+    expect(summary.requeued).toBe(1);
+    expect(failures).toEqual([]);
+  });
+
+  it("says nothing about a robots-blocked URL", async () => {
+    const site = await startSite({
+      "/robots.txt": robots("User-agent: *\nDisallow: /private"),
+      "/": page("/private", "/public"),
+      "/private": page(),
+      "/public": page(),
+    });
+    const failures: CrawlFailure[] = [];
+
+    const { summary } = await run(site, { onFailure: (failure) => void failures.push(failure) });
+
+    expect(summary.robotsBlocked).toBe(1);
+    expect(failures).toEqual([]);
+  });
+
+  it("reports a page whose final URL cannot be parsed", async () => {
+    //The one way parseHtml refuses a page the fetcher accepted. Every character below is
+    //legal in a URL and costs one byte on the wire, but form-urlencoding re-encodes each to
+    //%21 — so this is comfortably under MAX_URL_LENGTH when the fetcher checks it and over
+    //the cap once normalizeUrl rebuilds the query. The frontier never saw it either: it
+    //arrived as a redirect target, not as a link.
+    const overlong = `/deep?q=${"!".repeat(900)}`;
+    const site = await startSite({
+      "/": page("/redirect"),
+      "/redirect": { status: 302, headers: { location: overlong }, body: "" },
+      [overlong]: page(),
+    });
+    const failures: CrawlFailure[] = [];
+
+    const { summary } = await run(site, { onFailure: (failure) => void failures.push(failure) });
+
+    expect(summary.parseFailed).toBe(1);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ reason: "parse-failed", status: 200, retryable: false });
+  });
+
+  it("says nothing when the crawl is aborted mid-flight", async () => {
+    const site = await startSite({ "/": page("/a"), "/a": page() });
+    const controller = new AbortController();
+    const failures: CrawlFailure[] = [];
+
+    const { summary } = await run(site, {
+      signal: controller.signal,
+      onPage: () => controller.abort(),
+      onFailure: (failure) => void failures.push(failure),
+    });
+
+    expect(summary.stoppedBecause).toBe("aborted");
+    //Our own Ctrl-C is not evidence about the host, so nothing is recorded against it.
+    expect(failures).toEqual([]);
   });
 });
 

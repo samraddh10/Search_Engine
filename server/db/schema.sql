@@ -6,15 +6,19 @@
 -- migration and update this file to match — nothing enforces that they agree.
 
 CREATE TABLE documents (
-  id           SERIAL      PRIMARY KEY,
-  url          TEXT        NOT NULL UNIQUE,
-  title        TEXT        NOT NULL DEFAULT '',
-  content_text TEXT        NOT NULL,
-  content_hash TEXT        NOT NULL,
-  http_status  INTEGER     NOT NULL,
-  fetched_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  token_count  INTEGER     NOT NULL DEFAULT 0,
-  lang         TEXT
+  id            SERIAL      PRIMARY KEY,
+  url           TEXT        NOT NULL UNIQUE,
+  title         TEXT        NOT NULL DEFAULT '',
+  content_text  TEXT        NOT NULL,
+  content_hash  TEXT        NOT NULL,
+  http_status   INTEGER     NOT NULL,
+  fetched_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  token_count   INTEGER     NOT NULL DEFAULT 0,
+  lang          TEXT,
+  -- The page's self-reported <link rel="canonical">. Recorded, never used as identity:
+  -- a template emitting the same canonical on every page would collapse a whole site
+  -- into one row, silently and unrecoverably.
+  canonical_url TEXT
 );
 
 -- Crawler dedupe path. Not UNIQUE: distinct URLs may legitimately share content.
@@ -52,3 +56,20 @@ CREATE TABLE corpus_stats (
 );
 
 INSERT INTO corpus_stats (id) VALUES (1);
+
+-- URLs the crawler failed on, so a later run can re-seed exactly what broke. A row is
+-- deleted when its URL is later stored successfully, so this describes the current gaps in
+-- the corpus, not a full history. The URL is the natural key — nothing references this
+-- table, and ON CONFLICT (url) needs the unique index anyway.
+CREATE TABLE crawl_errors (
+  url           TEXT        PRIMARY KEY,
+  reason        TEXT        NOT NULL,  -- a FetchFailureReason, or 'parse-failed'
+  http_status   INTEGER,
+  detail        TEXT,
+  depth         INTEGER     NOT NULL DEFAULT 0,
+  -- Scheduling rounds that ended in failure, not HTTP requests: fetchPage spends its own
+  -- retries before the scheduler ever sees a failure.
+  attempts      INTEGER     NOT NULL DEFAULT 1,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
