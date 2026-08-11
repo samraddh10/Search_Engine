@@ -14,7 +14,8 @@
     "migrate": "node-pg-migrate up -m db/migrations --envPath .env",
     "migrate:down": "node-pg-migrate down -m db/migrations --envPath .env",
     "migrate:create": "node-pg-migrate create -m db/migrations -j js",
-    "seed": "tsx src/db/seed.ts"
+    "seed": "tsx src/db/seed.ts",
+    "crawl": "tsx src/crawler/cli.ts"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
