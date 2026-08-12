@@ -2,7 +2,7 @@
 //what is pinned here is the composition — the order of the four steps, and the three
 //contracts the pipeline hands forward to 2.2, 2.3 and 3.2.
 import { describe, expect, it } from "vitest";
-import { processQuery, processText } from "./pipeline.js";
+import { indexableText, processQuery, processText } from "./pipeline.js";
 
 describe("processText", () => {
   it("runs the full pipeline in order", () => {
@@ -99,6 +99,53 @@ describe("processText", () => {
   it("is deterministic", () => {
     const input = "Crawling, indexing and ranking 42 résumés.";
     expect(processText(input)).toEqual(processText(input));
+  });
+});
+
+//The contract between 2.2 and 3.2: both build the indexed string with this function, so the
+//positions one stores are the positions the other resolves. What is pinned here is the shape
+//of the join, since changing it silently shifts every offset in every document.
+describe("indexableText", () => {
+  it("indexes title terms, which body-only indexing would lose entirely", () => {
+    const terms = processText(
+      indexableText({ title: "Search Engines", contentText: "A crawler indexes pages." }),
+    ).map((token) => token.term);
+
+    expect(terms).toContain("engin");
+  });
+
+  //A space would let the last title word and the first body word fuse into one token when the
+  //title has no trailing punctuation — "Engines" + "A" is not a word anyone will ever search.
+  it("separates title from body so the boundary words stay distinct", () => {
+    const tokens = processText(indexableText({ title: "Crawler", contentText: "Pages load." }));
+
+    expect(tokens.map((token) => token.surface)).toEqual(["crawler", "pages", "load"]);
+  });
+
+  it("puts the title first, so its terms hold the lowest positions", () => {
+    const tokens = processText(
+      indexableText({ title: "Ranking", contentText: "Crawler indexes." }),
+    );
+
+    expect(tokens.map((token) => [token.surface, token.position])).toEqual([
+      ["ranking", 0],
+      ["crawler", 1],
+      ["indexes", 2],
+    ]);
+  });
+
+  it("handles an empty title without spending a position on the gap", () => {
+    const tokens = processText(indexableText({ title: "", contentText: "Crawler indexes." }));
+
+    expect(tokens.map((token) => [token.surface, token.position])).toEqual([
+      ["crawler", 0],
+      ["indexes", 1],
+    ]);
+  });
+
+  it("is deterministic", () => {
+    const doc = { title: "Search Engines", contentText: "A crawler indexes pages." };
+    expect(indexableText(doc)).toBe(indexableText(doc));
   });
 });
 

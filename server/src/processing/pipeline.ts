@@ -1,33 +1,26 @@
-//The one function both sides of the engine run: 2.2 calls it over `documents.content_text`
-//to build the index, and 3.1 calls it over the user's query to look terms up in it. That
-//shared use is the whole reason 2.1 is a module rather than four helpers inside the indexer.
-//If the two paths ever normalize differently — one stems, the other doesn't; one strips an
-//accent, the other doesn't — the engine returns zero results for a query that plainly
-//matches, with no error raised anywhere to say so.
 import { normalizeToken } from "./normalizer.js";
 import { stem } from "./stemmer.js";
 import { isStopword } from "./stopwords.js";
 import { tokenize } from "./tokenizer.js";
 
 /** A term ready to be indexed, with everything the later phases need to place it. */
+//ProcessedToken — what comes out the other end
+//This is the shape of one fully-processed term, and each field exists because a specific later phase needs it:
 export interface ProcessedToken {
-  //The stem. This is what goes in `terms.term` and what a query is matched against.
+  //term — the stemmed form. This is literally what gets written into terms.term in Postgres, and what a query is matched against.
+  //  "computing" and "computer" both become the same term here, which is the entire point of stemming.
   term: string;
-  //The normalized but *unstemmed* spelling. 2.2 tallies these per stem so 2.3 can fill
-  //`terms.surface_form`: the index stores "comput", and 3.3's autocomplete has to show the
-  //user "computer".
+
+  //surface — the normalized-but-not-stemmed spelling.
+  //if a search UI wants to show autocomplete suggestions to a human, you can't show them "comput" — that's not a real word.
   surface: string;
-  //Ordinal in the *full* token stream — assigned before stopwords are dropped, and never
-  //renumbered afterwards. Numbering the survivors instead would make "search the engine"
-  //and "search engine" both read as positions 0 and 1, so a phrase query for "search
-  //engine" would match text that does not contain the phrase. Keeping the gap preserves the
-  //distinction, and costs nothing: `positions` is already an int[].
+  
+  //position — where this token falls in the token stream, used for phrase queries (matching "search engine" as adjacent words,
+  //  not just two separate hits anywhere in the document).
   position: number;
-  //Character offsets into the string passed to processText — not into the normalized form,
-  //which has a different length. `postings` stores only `position`, so these exist for 3.2:
-  //it re-runs this function over `documents.content_text`, finds the token at the position
-  //a posting names, and slices the snippet window using these offsets. That only works
-  //because this function is deterministic — the same input always yields the same ordinals.
+  
+  //start / end — offsets back into the original input string (not the normalized form, which may have a different length
+  //  — the same offset-preservation issue from tokenizer.ts/normalizer.ts).
   start: number;
   /** Exclusive. */
   end: number;
@@ -54,7 +47,10 @@ export function processText(input: string): ProcessedToken[] {
     //stopword to a phrase query and weaken an adjacency check for no reason.
     if (surface === "") continue;
 
+    //assign this token its position now, before checking stopword status, then increment for the next token.
     const current = position++;
+    //if (isStopword(surface)) continue; — drop common words after they've already consumed a position number,
+    //  so the gap in the sequence is preserved rather than erased.
     if (isStopword(surface)) continue;
 
     tokens.push({
@@ -67,6 +63,38 @@ export function processText(input: string): ProcessedToken[] {
   }
 
   return tokens;
+}
+
+/** The two columns that make up a document's searchable text. */
+export interface IndexableFields {
+  title: string;
+  contentText: string;
+}
+
+/**
+ * Assemble the exact string that gets indexed — title first, then body.
+ *
+ * The title has to be indexed: a term that appears only there would otherwise make the page
+ * unmatchable by any query, and nothing downstream can recover a page the index never knew
+ * about. But `documents.title` and `documents.content_text` are separate columns, so someone
+ * has to join them, and *how* they are joined is a contract rather than a detail. 3.2 rebuilds
+ * a token's character offsets by re-running `processText` over the document text; if it ran
+ * over `content_text` alone while 2.2 indexed title-plus-body, every position would be off by
+ * the length of the title in tokens and every snippet would quote the wrong sentence.
+ *
+ * So this function is the contract, and both sides call it — the same reason `processQuery`
+ * is a wrapper over `processText` rather than its own sequence of steps. **3.2 must call this,
+ * not read `content_text` directly.**
+ *
+ * Two consequences worth knowing, both accepted (see the plan's 2.2 agreed design): title
+ * tokens count toward `token_count`, so they slightly affect BM25's length normalization; and
+ * a phrase query can match across the title/body seam, because a separator cannot consume a
+ * position — `processText` skips tokens that normalize to nothing without spending one.
+ */
+export function indexableText(doc: IndexableFields): string {
+  //A blank line, not a space: the tokenizer splits on any non-word run, so this only has to
+  //guarantee that the last title word and the first body word cannot fuse into one token.
+  return `${doc.title}\n\n${doc.contentText}`;
 }
 
 /**
