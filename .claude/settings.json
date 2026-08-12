@@ -21,7 +21,19 @@
       "PowerShell(git add server/src/crawler/fetcher.ts server/src/crawler/fetcher.test.ts)",
       "PowerShell(git add .claude/settings.json package-lock.json server/package.json server/src/crawler/fetcher.ts server/src/crawler/robots.ts server/src/crawler/robots.test.ts)",
       "Read(//c/Users/shriy/Downloads/Search_Engine2/server/src/crawler/**)",
-      "Bash(git commit -m 'feat\\(crawler\\): add URL canonicalization, charset decoding, and HTML parsing *)"
+      "Bash(git commit -m 'feat\\(crawler\\): add URL canonicalization, charset decoding, and HTML parsing *)",
+      "PowerShell(git add server/src/crawler/cli.ts server/src/crawler/cliArgs.ts server/src/crawler/cliArgs.test.ts package.json server/package.json)",
+      "Read(//c/Users/shriy/Downloads/Search_Engine2/server/src/processing/**)",
+      "PowerShell(git add server/src/processing/ package.json package-lock.json server/package.json)",
+      "Bash(git -C \"c:/Users/shriy/Downloads/Search_Engine2\" status --short)",
+      "Bash(git -C \"c:/Users/shriy/Downloads/Search_Engine2\" diff -- server/src/processing/stopwords.ts)",
+      "Bash(git -C \"c:/Users/shriy/Downloads/Search_Engine2\" remote -v)",
+      "Bash(git -C \"c:/Users/shriy/Downloads/Search_Engine2\" log --oneline -3)",
+      "Bash(git -C \"c:/Users/shriy/Downloads/Search_Engine2\" status -sb)",
+      "PowerShell(npx vitest run server/src/processing --reporter=basic)",
+      "PowerShell(npx vitest run server/src/processing)",
+      "PowerShell(git add server/src/processing/pipeline.ts server/src/processing/pipeline.test.ts)",
+      "PowerShell(git add .claude/settings.json)"
     ]
   }
 }
