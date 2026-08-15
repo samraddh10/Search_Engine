@@ -1,26 +1,15 @@
-//Phase 2.4 — `npm run search`, a debug entry point rather than a product.
-//
-//2.3's CLI prints `corpus_stats` as *read back* from Postgres because a summary printed from
-//memory looks identical whether or not the round trip worked. Ranking has the same gap in a
-//sharper form: hand-computed known-answer vectors prove the arithmetic, not that the orderings
-//are sensible on real pages. This is the only way to look at that before Phase 3 — and with
-//the TF-IDF baseline dropped, there is no second scorer to look at it through.
-//
-//Same composition-root rule as `crawler/cli.ts` and `indexer/cli.ts`: this is the one file
-//under `ranking/` that imports `db/pg.js`.
 import { checkPgHealth, closePg, pgPool } from "../db/pg.js";
-//Read through 2.3's function, never with a raw query — it is the single place
-//`corpus_stats.total_tokens` stops being the string node-postgres returns for a BIGINT.
-import { readCorpusStats } from "../indexer/indexStore.js";
-import { processQuery } from "../processing/pipeline.js";
+import type { CorpusStats } from "../indexer/invertedIndex.js";
+import { searchQuery, type SearchedPage } from "../search/queryProcessor.js";
 import { idf } from "./bm25.js";
-import { rankDocuments, uniqueTerms, type ScoredDocument } from "./scorer.js";
-import { fetchDocuments, fetchTermPostings, type DocumentSummary } from "./searchStore.js";
+import type { TermPostings } from "./scorer.js";
 import { USAGE, parseSearchArgs, type SearchCliOptions } from "./searchArgs.js";
 
 const EXIT_OK = 0;
 const EXIT_ERROR = 1;
 
+
+//Purpose of this function: the top-level orchestration — parse the CLI args, connect to Postgres, run the search, print results, and clean up. This is the function that actually gets invoked when you run npm run search -- "some query".
 async function main(argv: readonly string[]): Promise<number> {
   const parsed = parseSearchArgs(argv);
 
@@ -45,12 +34,21 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 
   try {
-    //The same pipeline the indexer ran, by construction rather than by two modules agreeing to
-    //be careful — `processQuery` is a thin wrapper over `processText` for exactly this reason.
-    //An index built with one tokenizer and queried with another silently returns nothing.
-    const stems = uniqueTerms(processQuery(options.query));
+    
+    const startedAt = Date.now();
 
-    if (stems.length === 0) {
+    const page = await searchQuery(pgPool, {
+      query: options.query,
+      pageSize: options.limit,
+      k1: options.k1,
+      b: options.b,
+    });
+
+    const elapsedMs = Date.now() - startedAt;
+
+    //The three zero-result outcomes are three different things to say. Collapsing them would
+    //make this print "No matches" for a query that never reached the index.
+    if (page.status === "no-searchable-terms") {
       console.error(
         `search: "${options.query}" has no searchable terms — every word was a stopword or ` +
           "normalized away.",
@@ -58,34 +56,14 @@ async function main(argv: readonly string[]): Promise<number> {
       return EXIT_OK;
     }
 
-    const stats = await readCorpusStats(pgPool);
-
-    if (stats.totalDocs === 0) {
+    if (page.status === "empty-index") {
       console.error(
         "search: the index is empty. Run `npm run crawl` and then `npm run index` first.",
       );
       return EXIT_OK;
     }
 
-    const startedAt = Date.now();
-
-    const terms = await fetchTermPostings(pgPool, stems);
-    const ranked = rankDocuments(terms, stats, {
-      limit: options.limit,
-      k1: options.k1,
-      b: options.b,
-    });
-
-    //Only the page being shown is hydrated. `documents` holds `content_text`, so joining it
-    //into the scoring query would make the expensive half of a search the half nobody reads.
-    const documents = await fetchDocuments(
-      pgPool,
-      ranked.map((result) => result.docId),
-    );
-
-    const elapsedMs = Date.now() - startedAt;
-
-    console.log(formatResults(options, stems, terms, stats, ranked, documents, elapsedMs));
+    console.log(formatResults(options, page, elapsedMs));
 
     return EXIT_OK;
   } finally {
@@ -95,25 +73,19 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 }
 
-type TermReport = Awaited<ReturnType<typeof fetchTermPostings>>;
-type Stats = Awaited<ReturnType<typeof readCorpusStats>>;
-
+//Purpose of this function: turn a SearchedPage (the raw, structured result of the search) into a nicely formatted, human-readable multi-line string ready to print to the terminal.
 function formatResults(
   options: SearchCliOptions,
-  stems: readonly string[],
-  terms: TermReport,
-  stats: Stats,
-  ranked: readonly ScoredDocument[],
-  documents: ReadonlyMap<number, DocumentSummary>,
+  page: SearchedPage,
   elapsedMs: number,
 ): string {
-  const lines: string[] = ["", `Query: ${options.query}`, `Stems: ${stems.join(", ")}`];
+  const lines: string[] = ["", `Query: ${page.query}`, `Stems: ${page.stems.join(", ")}`];
 
   if (options.explain) {
-    lines.push("", explainTerms(stems, terms, stats));
+    lines.push("", explainTerms(page.stems, page.terms, page.stats));
   }
 
-  if (ranked.length === 0) {
+  if (page.total === 0) {
     lines.push(
       "",
       "No matches. Every query term is absent from the index — check `npm run index` has " +
@@ -124,27 +96,32 @@ function formatResults(
     return lines.join("\n");
   }
 
-  lines.push(
-    "",
-    `${ranked.length} result${ranked.length === 1 ? "" : "s"} ` +
-      `(${stats.totalDocs.toLocaleString("en-US")} documents indexed, ${elapsedMs}ms)`,
-    "",
-  );
+  //shown — how many results are actually in this page
+  const shown = page.results.length;
+  //indexed — total documents in the whole corpus, formatted with .toLocaleString("en-US")
+  const indexed = page.stats.totalDocs.toLocaleString("en-US");
 
-  const width = String(ranked.length).length;
+  //3.1 reports the whole candidate set, so this can now distinguish "3 results" from "3 of 400"
+  //— which the old version could not, because it only ever held the truncated list.
+  const count =
+    shown === page.total
+      ? `${page.total} result${page.total === 1 ? "" : "s"}`
+      : `${page.total.toLocaleString("en-US")} results, showing ${shown}`;
 
-  ranked.forEach((result, position) => {
-    const document = documents.get(result.docId);
+  lines.push("", `${count} (${indexed} documents indexed, ${elapsedMs}ms)`, "");
+
+  const width = String(shown).length;
+
+  page.results.forEach((result, position) => {
     const rank = String(position + 1).padStart(width);
 
     //A crawled page may legitimately have no <title>; the column defaults to ''. Showing the
     //URL twice reads better than an empty line where a heading should be.
-    const title = document?.title.trim() ?? "";
-    const url = document?.url ?? `(document ${result.docId} is gone)`;
+    const title = result.title.trim();
 
     lines.push(
-      `${rank}. ${result.score.toFixed(4)}  ${title === "" ? url : title}`,
-      `${" ".repeat(width + 2)}${url}`,
+      `${rank}. ${result.score.toFixed(4)}  ${title === "" ? result.url : title}`,
+      `${" ".repeat(width + 2)}${result.url}`,
       `${" ".repeat(width + 2)}matched: ${result.matchedTerms.join(", ")}`,
       "",
     );
@@ -153,12 +130,13 @@ function formatResults(
   return lines.join("\n");
 }
 
-/**
- * Per-term breakdown, which is the half of `--explain` that makes a surprising ranking
- * legible: a term in nearly every document has an IDF near zero and is contributing almost
- * nothing, and a term absent from `terms` entirely is contributing literally nothing.
- */
-function explainTerms(stems: readonly string[], terms: TermReport, stats: Stats): string {
+//Purpose of this function: produce the --explain diagnostic table — a per-query-term breakdown showing each stem's document frequency, IDF weight, 
+// and how many documents it actually matched.
+function explainTerms(
+  stems: readonly string[],
+  terms: readonly TermPostings[],
+  stats: CorpusStats,
+): string {
   const byTerm = new Map(terms.map((entry) => [entry.term, entry]));
 
   const rows = stems.map((stem) => {
