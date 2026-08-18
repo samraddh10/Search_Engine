@@ -205,11 +205,32 @@ describe("writeIndex", () => {
       { id: b, token_count: 6 },
     ]);
 
-    expect(await readCorpusStats(pgPool)).toEqual({
+    expect(await readCorpusStats(pgPool)).toMatchObject({
       totalDocs: 2,
       totalTokens: 16,
       avgDocLen: 8,
     });
+  });
+
+  // `updated_at` is Phase 3's reindex signal: 3.3's suggest index and 3.4's cache both poll it
+  // to notice that this job — which runs in an entirely different process — has rebuilt
+  // underneath them. Nothing read the column until 3.3, so a write that quietly stopped
+  // refreshing it would strand every API instance on a stale index with nothing raised.
+  it("moves corpus_stats.updated_at on every write, and reports it as epoch milliseconds", async () => {
+    const [a] = (await insertDocuments(1)) as [number];
+    const index = builtIndex(
+      [term({ term: "crawl", postings: [{ docId: a, tf: 1, positions: [0] }] })],
+      new Map([[a, 1]]),
+    );
+
+    const before = (await readCorpusStats(pgPool)).updatedAt;
+    await withClient((client) => writeIndex(client, index));
+    const after = (await readCorpusStats(pgPool)).updatedAt;
+
+    // A number, not the `Date` node-postgres hands back: `new Date(x) !== new Date(x)` is
+    // always true, so a poll comparing `Date`s would see a reindex on every single tick.
+    expect(typeof after).toBe("number");
+    expect(after).toBeGreaterThan(before);
   });
 
   // The COPY path's one real encoding decision: `positions` is serialized by hand as a
@@ -302,7 +323,7 @@ describe("writeIndex", () => {
       { term: "stay", doc_id: b, tf: 5, positions: [0, 2] },
     ]);
 
-    expect(await readCorpusStats(pgPool)).toEqual({
+    expect(await readCorpusStats(pgPool)).toMatchObject({
       totalDocs: 2,
       totalTokens: 9,
       avgDocLen: 4.5,
@@ -327,7 +348,7 @@ describe("writeIndex", () => {
     expect(await termRows()).toEqual([]);
     expect(await postingRows()).toEqual([]);
     // 0 rather than NaN, the guard 2.2 put in buildIndex, carried into the column BM25 reads.
-    expect(await readCorpusStats(pgPool)).toEqual({
+    expect(await readCorpusStats(pgPool)).toMatchObject({
       totalDocs: 0,
       totalTokens: 0,
       avgDocLen: 0,
@@ -357,7 +378,7 @@ describe("writeIndex", () => {
 
     expect((await termRows()).map((row) => row.term)).toEqual(["keep"]);
     expect(await postingRows()).toEqual([{ term: "keep", doc_id: a, tf: 1, positions: [0] }]);
-    expect(await readCorpusStats(pgPool)).toEqual({
+    expect(await readCorpusStats(pgPool)).toMatchObject({
       totalDocs: 1,
       totalTokens: 1,
       avgDocLen: 1,

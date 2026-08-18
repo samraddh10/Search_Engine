@@ -169,16 +169,40 @@ export async function writeIndex(
   }
 }
 
-//What it does: reads the single row out of corpus_stats and returns it as a properly-typed CorpusStats object.
-export async function readCorpusStats(db: DocumentSource): Promise<CorpusStats> {
+/**
+ * The `corpus_stats` row as stored — the computed statistics plus the reindex signal.
+ *
+ * `updatedAt` is deliberately *not* a field on `CorpusStats` itself. That type is what
+ * `buildIndex` computes in memory, where no such timestamp exists, and what the pure scorer
+ * takes; putting a persistence fact on it would force `buildIndex` to invent a value and make
+ * every ranking fixture carry a number it never reads.
+ */
+export interface PersistedCorpusStats extends CorpusStats {
+  /**
+   * `corpus_stats.updated_at` as **epoch milliseconds** — Phase 3's reindex signal, written by
+   * `writeCorpusStats` on every index run and polled by 3.3/3.4 to notice that the index job
+   * (which runs in another process entirely) has rebuilt underneath them.
+   *
+   * A number rather than the `Date` node-postgres hands back, and that is not a style
+   * preference. `new Date(x) !== new Date(x)` is *always* true — it compares object identity,
+   * not the instant — so a poll holding the previous `Date` and comparing it against a fresh
+   * one detects a reindex on every single tick, rebuilding its state forever while reviewing
+   * as obviously correct. Converted here, in the one place, exactly like the BIGINT below.
+   */
+  updatedAt: number;
+}
+
+//What it does: reads the single row out of corpus_stats and returns it as a properly-typed object.
+export async function readCorpusStats(db: DocumentSource): Promise<PersistedCorpusStats> {
   const { rows } = await db.query<{
     total_docs: number;
     total_tokens: string;
     avg_doc_len: number;
-  }>("SELECT total_docs, total_tokens, avg_doc_len FROM corpus_stats WHERE id = 1");
+    updated_at: Date;
+  }>("SELECT total_docs, total_tokens, avg_doc_len, updated_at FROM corpus_stats WHERE id = 1");
 
   const row = rows[0];
-  if (row === undefined) return { totalDocs: 0, totalTokens: 0, avgDocLen: 0 };
+  if (row === undefined) return { totalDocs: 0, totalTokens: 0, avgDocLen: 0, updatedAt: 0 };
 
   return {
     totalDocs: row.total_docs,
@@ -188,6 +212,7 @@ export async function readCorpusStats(db: DocumentSource): Promise<CorpusStats> 
     //sprinkled at each call site is a `NaN` waiting for the one site that forgets.
     totalTokens: Number(row.total_tokens),
     avgDocLen: row.avg_doc_len,
+    updatedAt: row.updated_at.getTime(),
   };
 }
 
