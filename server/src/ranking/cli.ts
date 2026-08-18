@@ -1,3 +1,4 @@
+import type { SearchMatch } from "shared";
 import { checkPgHealth, closePg, pgPool } from "../db/pg.js";
 import type { CorpusStats } from "../indexer/invertedIndex.js";
 import { searchQuery, type SearchedPage } from "../search/queryProcessor.js";
@@ -119,15 +120,37 @@ function formatResults(
     //URL twice reads better than an empty line where a heading should be.
     const title = result.title.trim();
 
+    const indent = " ".repeat(width + 2);
+
     lines.push(
       `${rank}. ${result.score.toFixed(4)}  ${title === "" ? result.url : title}`,
-      `${" ".repeat(width + 2)}${result.url}`,
-      `${" ".repeat(width + 2)}matched: ${result.matchedTerms.join(", ")}`,
+      `${indent}${result.url}`,
+      `${indent}${highlight(result.snippet, result.matches)}`,
+      `${indent}matched: ${result.matchedTerms.join(", ")}`,
       "",
     );
   });
 
   return lines.join("\n");
+}
+
+/**
+ * Bracket each match, reading the offsets rather than searching for the terms again.
+ *
+ * That is the point of doing it this way: rendering through the offsets is the only end-to-end
+ * check that 3.2's arithmetic is right. An off-by-two from the `… ` prefix shows up here as a
+ * bracket sitting one word to the left, which is exactly how it would show up in the browser.
+ */
+function highlight(snippet: string, matches: readonly SearchMatch[]): string {
+  let out = "";
+  let cursor = 0;
+
+  for (const match of matches) {
+    out += `${snippet.slice(cursor, match.start)}[${snippet.slice(match.start, match.end)}]`;
+    cursor = match.end;
+  }
+
+  return out + snippet.slice(cursor);
 }
 
 //Purpose of this function: produce the --explain diagnostic table — a per-query-term breakdown showing each stem's document frequency, IDF weight, 

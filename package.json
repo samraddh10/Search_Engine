@@ -20,6 +20,8 @@
     "migrate:down": "npm run migrate:down --workspace=server",
     "seed": "npm run seed --workspace=server --",
     "crawl": "npm run crawl --workspace=server --",
+    "index": "npm run index --workspace=server --",
+    "search": "npm run search --workspace=server --",
     "test": "npm run test --workspace=server",
     "typecheck": "npm run typecheck --workspace=shared && npm run typecheck --workspace=server && npm run typecheck --workspace=client"
   }

@@ -33,7 +33,11 @@
       "PowerShell(npx vitest run server/src/processing --reporter=basic)",
       "PowerShell(npx vitest run server/src/processing)",
       "PowerShell(git add server/src/processing/pipeline.ts server/src/processing/pipeline.test.ts)",
-      "PowerShell(git add .claude/settings.json)"
+      "PowerShell(git add .claude/settings.json)",
+      "PowerShell(git add server/src/indexer/invertedIndex.ts server/src/indexer/invertedIndex.test.ts server/src/indexer/postings.ts server/src/indexer/postings.test.ts)",
+      "PowerShell(git add server/src/indexer/cli.ts server/src/indexer/indexArgs.ts server/src/indexer/indexArgs.test.ts server/src/indexer/indexStore.ts server/src/indexer/indexStore.test.ts)",
+      "Bash(git commit -m 'feat\\(indexer\\): add Postgres index store and rebuild CLI *)",
+      "Bash(git commit -m '@ *)"
     ]
   }
 }

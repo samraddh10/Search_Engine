@@ -1,9 +1,11 @@
+import type { SearchMatch } from "shared";
 import { DEFAULT_PAGE_SIZE } from "shared";
 import { readCorpusStats } from "../indexer/indexStore.js";
 import type { CorpusStats } from "../indexer/invertedIndex.js";
 import { processQuery } from "../processing/pipeline.js";
 import { rankDocuments, uniqueTerms, type TermPostings } from "../ranking/scorer.js";
 import { fetchDocuments, fetchTermPostings, type Queryable } from "../ranking/searchStore.js";
+import { buildSnippet } from "./snippets.js";
 
 //Purpose: this is the "order form" — everything a caller (the CLI today, the HTTP API tomorrow) can hand to searchQuery.
 export interface SearchOptions {
@@ -14,7 +16,16 @@ export interface SearchOptions {
   b?: number;
 }
 
-//Purpose: one hydrated result, ready to render.
+/**
+ * One hydrated result, ready to render.
+ *
+ * Structurally `shared`'s `SearchResult` plus `matchedTerms`, which 3.1 kept deliberately: the
+ * wire type requires `snippet` and `matches`, and stubbing them would have typechecked, looked
+ * implemented, and shipped if 3.2 had slipped. This is the seam it described — the near-identity
+ * mapping is where the missing fields got added, and 3.2 added them here rather than in a layer
+ * above so that 3.4 caches one complete value instead of choosing between an incomplete one and
+ * reaching around the seam.
+ */
 export interface RankedResult {
   docId: number;
   url: string;
@@ -23,6 +34,10 @@ export interface RankedResult {
   score: number;
   /** What 3.2 highlights from. Records a match even where the term's IDF was ~0. */
   matchedTerms: string[];
+  /** Plain text, body only. Untrusted — Phase 4 renders it as text nodes, never as HTML. */
+  snippet: string;
+  /** Offsets into `snippet`, not into the document. */
+  matches: SearchMatch[];
 }
 
 /**
@@ -114,12 +129,23 @@ export async function searchQuery(db: Queryable, options: SearchOptions): Promis
     //is that `total` transiently overstates by one, which the next query corrects.
     if (document === undefined) continue;
 
+    //Per result, and only for the page being returned — the snippet builder re-runs the
+    //processing pipeline over the document's text, which is why it is never handed the whole
+    //candidate set. Accepted CPU rather than a schema change: 3.4's cache absorbs repeats, and
+    //per-docId memoization is the escape hatch if 5.4 ever measures a reason for one.
+    const { snippet, matches } = buildSnippet(
+      { title: document.title, contentText: document.contentText },
+      scored.matchedTerms,
+    );
+
     results.push({
       docId: scored.docId,
       url: document.url,
       title: document.title,
       score: scored.score,
       matchedTerms: scored.matchedTerms,
+      snippet,
+      matches,
     });
   }
 

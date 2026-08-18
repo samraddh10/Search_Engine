@@ -34,6 +34,7 @@ interface DocumentRow extends Record<string, unknown> {
   id: number;
   url: string;
   title: string;
+  content_text: string;
 }
 
 //Purpose: the public, camelCase-friendly shape describing "enough of a document to render one line of search results"
@@ -41,6 +42,15 @@ export interface DocumentSummary {
   id: number;
   url: string;
   title: string;
+  /**
+   * 3.2 slices the snippet out of this — through `indexableText(...)`, never on its own.
+   *
+   * It rides on the hydration query rather than a second lookup of its own: this query is
+   * already bounded by the page size, which is exactly the "score over the candidate set,
+   * hydrate only the page being returned" split 2.4 built. A separate join over `documents`
+   * would be the drift this module exists to prevent.
+   */
+  contentText: string;
 }
 
 /**
@@ -130,9 +140,14 @@ export async function fetchDocuments(
   if (ids.length === 0) return new Map();
 
   const { rows } = await db.query<DocumentRow>(
-    `SELECT id, url, title FROM documents WHERE id = ANY($1::int[])`,
+    `SELECT id, url, title, content_text FROM documents WHERE id = ANY($1::int[])`,
     [[...ids]],
   );
 
-  return new Map(rows.map((row) => [row.id, { id: row.id, url: row.url, title: row.title }]));
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      { id: row.id, url: row.url, title: row.title, contentText: row.content_text },
+    ]),
+  );
 }

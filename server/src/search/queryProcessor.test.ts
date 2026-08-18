@@ -15,7 +15,12 @@ beforeEach(async () => {
   await pgPool.query("DELETE FROM corpus_stats");
 });
 
-async function insertDocument(n: number, tokenCount: number, title?: string): Promise<number> {
+async function insertDocument(
+  n: number,
+  tokenCount: number,
+  title?: string,
+  contentText?: string,
+): Promise<number> {
   const { rows } = await pgPool.query<{ id: number }>(
     `INSERT INTO documents (url, title, content_text, content_hash, http_status, token_count)
      VALUES ($1, $2, $3, $4, 200, $5)
@@ -23,7 +28,7 @@ async function insertDocument(n: number, tokenCount: number, title?: string): Pr
     [
       `https://example.test/page-${n}`,
       title ?? `Page ${n}`,
-      `Body text for page ${n}.`,
+      contentText ?? `Body text for page ${n}.`,
       `hash-${n}`,
       tokenCount,
     ],
@@ -247,5 +252,38 @@ describe("searchQuery", () => {
     // rows that disappeared is the recoverable direction; a placeholder URL in the response
     // would not be.
     expect(page.total).toBe(2);
+  });
+
+  // 3.2. The snippet builder's own arithmetic is covered exhaustively in `snippets.test.ts`;
+  // what these two prove is the wiring — that `content_text` survives the hydration query and
+  // that the offsets reaching a caller index into the snippet they were built from.
+  it("fills in the snippet and match offsets that 3.1 deliberately left empty", async () => {
+    const crawl = await insertTerm("crawl", 1);
+    const docId = await insertDocument(
+      1,
+      20,
+      "Crawler Guide",
+      "The scheduler keeps crawling politely across hosts.",
+    );
+    await insertPosting(crawl, docId, 1);
+    await setCorpusStats(1, 20);
+
+    const result = (await searchQuery(pgPool, { query: "crawling" })).results[0]!;
+
+    expect(result.snippet).toBe("The scheduler keeps crawling politely across hosts.");
+    expect(result.snippet.slice(result.matches[0]!.start, result.matches[0]!.end)).toBe("crawling");
+  });
+
+  it("returns the head of the body when the query only matched the title", async () => {
+    const crawl = await insertTerm("crawl", 1);
+    const docId = await insertDocument(1, 20, "Crawling Guide", "The scheduler keeps hosts happy.");
+    await insertPosting(crawl, docId, 1);
+    await setCorpusStats(1, 20);
+
+    const result = (await searchQuery(pgPool, { query: "crawling" })).results[0]!;
+
+    // The title is rendered above the snippet, so quoting it there would print it twice.
+    expect(result.snippet).toBe("The scheduler keeps hosts happy.");
+    expect(result.matches).toEqual([]);
   });
 });

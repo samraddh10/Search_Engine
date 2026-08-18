@@ -4,7 +4,7 @@
 
 This project is a full-stack search engine built from scratch using Node.js, TypeScript, PostgreSQL, Redis, and React. The goal is to understand and implement the core components of a modern search engine rather than relying on existing search platforms like Elasticsearch or Solr.
 
-The system crawls web pages starting from a set of seed URLs, extracts and processes textual content, builds an inverted index, and ranks search results using custom implementations of TF-IDF and BM25. Users can search indexed documents through a REST API and a React-based frontend that supports autocomplete, highlighted search terms, and cached query results.
+The system crawls web pages starting from a set of seed URLs, extracts and processes textual content, builds an inverted index, and ranks search results using a custom implementation of BM25. Users can search indexed documents through a REST API and a React-based frontend that supports autocomplete, highlighted search terms, and cached query results.
 
 The project emphasizes modular design, scalability, and clean separation of responsibilities. Every major search engine component—including crawling, indexing, ranking, caching, and query processing—is implemented as an independent module that can be developed, tested, and extended separately.
 
@@ -26,9 +26,9 @@ it before assuming what exists.
 - Tokenization, stopword removal, and stemming
 - Custom inverted index implementation
 - PostgreSQL-backed document and index storage
-- Custom TF-IDF and BM25 ranking algorithms
+- Custom BM25 ranking algorithm
 - Search result highlighting and snippet generation
-- Redis-powered caching
+- In-process search-result caching (LRU + TTL) and autocomplete index
 - Autocomplete suggestions
 - REST API built with Express
 - React frontend
@@ -45,7 +45,11 @@ Responsible for discovering and downloading web pages.
 
 **Responsibilities:** Crawl websites from seed URLs, respect `robots.txt`, manage the crawl frontier, limit concurrency, extract links, store raw documents.
 
-**Technologies:** Node.js, TypeScript, Axios/Fetch, Cheerio, robots-parser, p-limit.
+**Technologies:** Node.js, TypeScript, native `fetch`/undici (Axios was rejected in 1.1),
+Cheerio, robots-parser, `ioredis` (frontier store), `pg` (document store), `zod` (CLI flags).
+Concurrency is a custom single dispatcher loop with per-host politeness — `p-limit` was
+evaluated in 1.5 and dropped, since a semaphore cannot express "skip this one, that host is
+cooling."
 
 ---
 
@@ -71,7 +75,8 @@ Creates the searchable inverted index.
 
 Computes document relevance scores.
 
-**Algorithms:** TF-IDF, BM25.
+**Algorithms:** BM25 — the only scorer. A TF-IDF comparison baseline was planned and
+dropped; see *Phase 2.4 — Ranking: agreed design* in `docs/project-plan.md`.
 
 **Responsibilities:** Retrieve posting lists, calculate ranking scores, sort results, return ranked document IDs.
 
@@ -91,7 +96,10 @@ Improves response time for repeated searches.
 
 **Responsibilities:** Cache search results, cache autocomplete prefixes, reduce database load.
 
-**Technology:** Redis.
+**Technology:** in-process memory — an LRU + TTL map for results, a sorted term index for
+autocomplete prefixes — held in the Express process's own RAM and rebuilt from Postgres on
+startup. Deliberately **not** Redis: hosted Redis free tiers meter requests, and
+`/suggestions` fires per keystroke. See *Hosting model* in `docs/project-plan.md`.
 
 ---
 
@@ -119,7 +127,11 @@ Provides the user interface.
 
 **PostgreSQL:** Documents, inverted index, posting lists, document statistics, crawl metadata.
 
-**Redis:** Cached search results, cached autocomplete data, temporary crawler state.
+**Redis (local crawl job only — never part of the hosted deployment):** crawl frontier queue,
+visited-URL set, robots.txt cache.
+
+**In-process memory (the hosted API):** search-result cache, autocomplete term index — both
+expendable, rebuilt from Postgres on restart.
 
 ---
 

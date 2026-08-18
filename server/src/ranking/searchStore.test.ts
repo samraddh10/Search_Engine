@@ -155,6 +155,9 @@ describe("fetchDocuments", () => {
       id: docA,
       url: "https://example.test/page-1",
       title: "Page 1",
+      // 3.2 slices the snippet out of this. It rides on the hydration query rather than a
+      // second lookup because that query is already bounded by the page size.
+      contentText: "Body text for page 1.",
     });
   });
 
