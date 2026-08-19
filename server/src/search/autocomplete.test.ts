@@ -385,6 +385,13 @@ describe("staleness — concurrency", () => {
     const first = index.refresh();
     const second = index.refresh();
 
+    //Wait until the rebuild has actually reached the terms query before releasing the gate.
+    //`refresh()` reads the corpus version *first* (see `#rebuild` — a version read after its
+    //rows can stamp stale data as fresh), so the terms query is no longer the first thing this
+    //call does, and releasing the gate synchronously would fire it before the query is holding
+    //it. The dedup under test is unaffected: both `refresh()` calls are still issued back to
+    //back, and `#rebuilding` is set synchronously by the first.
+    await until(() => db.termQueries === 1);
     db.gate!();
     await Promise.all([first, second]);
 

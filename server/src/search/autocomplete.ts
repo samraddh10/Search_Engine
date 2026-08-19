@@ -2,9 +2,9 @@
 //`search/` imports no database, and 3.5 is the composition root that owns connections.
 import type { Suggestion } from "shared";
 import { SUGGESTION_LIMIT } from "shared";
-import { readCorpusStats } from "../indexer/indexStore.js";
 import { normalizeToken } from "../processing/normalizer.js";
 import type { Queryable } from "../ranking/searchStore.js";
+import { CorpusVersion } from "./corpusVersion.js";
 
 export interface SuggestOptions {
   limit?: number;
@@ -12,21 +12,18 @@ export interface SuggestOptions {
 
 export interface SuggestIndexOptions {
   /**
-   * How long to trust the in-memory array before re-reading `corpus_stats.updated_at`.
+   * The shared reindex poll. 3.5 passes one instance to every consumer that goes stale — this
+   * index and 3.4's result cache — so a request costs one version read rather than one each.
    *
-   * This is not a TTL on the data — the array is only rebuilt when the version actually moves.
-   * It bounds how often the *check* runs, so a burst of keystrokes costs one single-row read
-   * rather than one per character.
+   * Omitted, this index builds its own from `db`, which is what the tests and any single-consumer
+   * caller want.
    */
+  version?: CorpusVersion;
+  /** Forwarded to the `CorpusVersion` built when `version` is not supplied. */
   minPollIntervalMs?: number;
-  /** Injected for tests, exactly as `HostScheduler` takes one. */
+  /** Injected for tests, exactly as `HostScheduler` takes one. Forwarded like `minPollIntervalMs`. */
   now?: () => number;
 }
-
-//Default: check the DB for changes at most once every 30 seconds.
-export const SUGGEST_DEFAULTS = {
-  minPollIntervalMs: 30_000,
-} as const;
 
 /** One row of the in-memory index: a display spelling and the weight it is ranked by. */
 interface TermEntry {
@@ -96,8 +93,9 @@ function splitInput(input: string): { head: string; fragment: string } {
  */
 export class SuggestIndex {
   readonly #db: Queryable;
-  readonly #minPollIntervalMs: number;
-  readonly #now: () => number;
+  //The poll, which this class no longer owns — see `CorpusVersion`. What it still owns is the
+  //*reaction* to a version change, which is the expensive half and the half nothing else shares.
+  readonly #watcher: CorpusVersion;
 
   //`null` means "never built", which is distinct from "built and empty" — an empty corpus is a
   //real answer, and conflating the two would re-query `terms` on every keystroke forever.
@@ -105,16 +103,15 @@ export class SuggestIndex {
   #entries: TermEntry[] | null = null;
   //#version — records which corpus_stats.updated_at value the current #entries reflects. This is how staleness gets detected.
   #version = 0;
-  //#lastPollAt — the last time we actually checked the database for a version change.
-  #lastPollAt = Number.NEGATIVE_INFINITY;
   //In-flight dedup, the same shape 1.2 used for concurrent robots.txt fetches: a burst of
   //keystrokes arriving just after a reindex must not each start their own rebuild.
   #rebuilding: Promise<void> | null = null;
 
   constructor(db: Queryable, options: SuggestIndexOptions = {}) {
     this.#db = db;
-    this.#minPollIntervalMs = options.minPollIntervalMs ?? SUGGEST_DEFAULTS.minPollIntervalMs;
-    this.#now = options.now ?? Date.now;
+    this.#watcher =
+      options.version ??
+      new CorpusVersion(db, { minPollIntervalMs: options.minPollIntervalMs, now: options.now });
   }
 
   /** How many terms are currently indexed; `0` before the first build. */
@@ -195,24 +192,22 @@ export class SuggestIndex {
     //stalled keystroke is not.
     if (this.#rebuilding !== null) return;
 
-    //— read the (possibly fake, in tests) current time.
-    const now = this.#now();
-    //the throttle: if we already have something built, and it hasn't been long enough since the last check, skip the check entirely.
-    if (this.#entries !== null && now - this.#lastPollAt < this.#minPollIntervalMs) return;
-    this.#lastPollAt = now;
-
     try {
-      //`updated_at` is written by `writeCorpusStats` on every index run, and is read here as
-      //epoch ms — see `PersistedCorpusStats`, where the `Date`-identity trap is spelled out.
-      const { updatedAt } = await readCorpusStats(this.#db);
-      if (this.#entries !== null && updatedAt === this.#version) return;
-      await this.#rebuild(updatedAt);
+      //The throttle, the in-flight dedup of the read itself and the degrade-on-blip rule all
+      //live in `CorpusVersion` now, shared with 3.4's result cache. What is left here is the
+      //only part that was ever specific to this class: comparing the number against the one the
+      //current array was built from, and rebuilding when they differ.
+      const version = await this.#watcher.current();
+      if (this.#entries !== null && version === this.#version) return;
+      await this.#rebuild(version);
     } catch (error) {
       //Serving a slightly stale array beats failing a keystroke, so a blip is swallowed *if*
       //there is something to serve — the same call this plan made in 1.2, where a dead Redis
       //degrades the crawl to fetching robots.txt more often rather than stopping it. With
       //nothing built yet there is no degraded mode to fall back to, so the error propagates and
-      //3.5 reports it honestly.
+      //3.5 reports it honestly. (`CorpusVersion` applies the same rule to the *read*, so what
+      //reaches here is a version read that never once succeeded, or a failure of the rebuild
+      //query below.)
       if (this.#entries === null) throw error;
     }
   }
@@ -224,6 +219,14 @@ export class SuggestIndex {
 
     //defines a small async function and calls it immediately, capturing the resulting promise in run before doing anything else with it.
     const run = (async () => {
+      //Read the version *before* the rows, always. An entry stamped with a version read after
+      //its data can hold pre-reindex rows wearing a post-reindex number, and the comparison in
+      //`#maybeRefresh` will never catch it — stale until something unrelated moves the column.
+      //Read first and the failure mode inverts into a redundant rebuild on the next poll, which
+      //costs one query and is self-correcting. (This branch is `refresh()`'s: `#maybeRefresh`
+      //already read the version before calling in, and passes it as `knownVersion`.)
+      const version = knownVersion ?? (await this.#watcher.current());
+
       //`surface_form IS NOT NULL` at the source, so the in-memory rows carry no nullable field
       //to re-check on the hot path. The `COALESCE(surface_form, term)` that 0.4 originally
       //planned is deliberately *not* used: it falls back to a bare stem, and showing a human
@@ -237,12 +240,6 @@ export class SuggestIndex {
 
       const entries = rows.map((row) => ({ surface: row.surface_form, docFreq: row.doc_freq }));
       entries.sort(bySurface);
-
-      //Read the version *after* the rows when the caller did not already have it, so a rebuild
-      //that raced an index run is recorded as older than it is and re-runs on the next poll.
-      //The reverse order would stamp the new version onto rows read before the commit and the
-      //index would stay stale until something else moved it.
-      const version = knownVersion ?? (await readCorpusStats(this.#db)).updatedAt;
 
       //Swapped in as a unit, so a concurrent `suggest()` reads either the whole old array or
       //the whole new one and never a half-filled build.
