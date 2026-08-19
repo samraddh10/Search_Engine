@@ -37,7 +37,16 @@
       "PowerShell(git add server/src/indexer/invertedIndex.ts server/src/indexer/invertedIndex.test.ts server/src/indexer/postings.ts server/src/indexer/postings.test.ts)",
       "PowerShell(git add server/src/indexer/cli.ts server/src/indexer/indexArgs.ts server/src/indexer/indexArgs.test.ts server/src/indexer/indexStore.ts server/src/indexer/indexStore.test.ts)",
       "Bash(git commit -m 'feat\\(indexer\\): add Postgres index store and rebuild CLI *)",
-      "Bash(git commit -m '@ *)"
+      "Bash(git commit -m '@ *)",
+      "PowerShell(git add server/src/search/corpusVersion.ts server/src/search/corpusVersion.test.ts server/src/search/autocomplete.ts server/src/search/autocomplete.test.ts)",
+      "PowerShell(git add server/src/search/cache.ts server/src/search/cache.test.ts server/package.json package-lock.json)",
+      "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 status --short)",
+      "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 diff --stat)",
+      "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 remote -v)",
+      "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 status -sb)",
+      "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 diff -- .claude/settings.json client/package.json server/package.json client/vite.config.ts server/src/index.ts)",
+      "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 diff -- server/src/api/server.ts server/src/search/cache.ts server/src/search/queryProcessor.ts shared/src/types.ts)",
+      "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 diff -- client/src/App.tsx client/src/main.tsx)"
     ]
   }
 }
