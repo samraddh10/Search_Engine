@@ -1,26 +1,42 @@
 import cors from "cors";
-import express, { Request, Response } from "express";
-import { DEFAULT_PAGE_SIZE } from "shared";
-import { checkPgHealth } from "../db/pg.js";
-import { checkRedisHealth } from "../db/redis.js";
+import express from "express";
+//Its main job is to set HTTP security headers on your server's responses.
+import helmet from "helmet";
+import { pgPool } from "../db/pg.js";
+import { SuggestIndex } from "../search/autocomplete.js";
+import { ResultCache } from "../search/cache.js";
+import { CorpusVersion } from "../search/corpusVersion.js";
+import { errorHandler } from "./middleware.js";
+import { createRouter } from "./routes.js";
+
+/**
+ * The composition root.
+ *
+ * One `CorpusVersion` for the process, shared by both consumers that go stale. Two watchers
+ * would double the poll and let the cache and the suggest index disagree about which corpus they
+ * describe — which is the whole reason 3.4 extracted the watcher instead of letting the cache
+ * grow its own.
+ */
+export const corpusVersion = new CorpusVersion(pgPool);
+export const suggestIndex = new SuggestIndex(pgPool, { version: corpusVersion });
+export const resultCache = new ResultCache();
 
 const app = express();
 
+//Behind the host's proxy every request otherwise carries the proxy's address, which puts every
+//user in one rate-limit bucket — the limiter then either does nothing or blocks all of them at
+//once. `1` rather than `true`: trust exactly the one hop we deploy behind.
+app.set("trust proxy", 1);
+
+app.use(helmet());
 app.use(cors());
-app.use(express.json());
+//No `express.json()`. Every endpoint is a GET, so it would parse nothing and only widen what
+//the API accepts.
 
-app.get("/api/health", async (_req: Request, res: Response) => {
-  const [postgres, redis] = await Promise.all([checkPgHealth(), checkRedisHealth()]);
-  // Postgres is a hard dependency; Redis is not (it's crawl-only and absent when hosted).
-  // `redis !== false` treats "not_configured" as healthy but still fails a Redis that was
-  // configured and is now unreachable.
-  const ok = postgres && redis !== false;
+app.use("/api", createRouter({ db: pgPool, version: corpusVersion, cache: resultCache, suggest: suggestIndex }));
 
-  res.status(ok ? 200 : 503).json({
-    status: ok ? "ok" : "degraded",
-    defaultPageSize: DEFAULT_PAGE_SIZE,
-    dependencies: { postgres, redis },
-  });
-});
+//Last, and after the routes: Express picks an error handler by arity, and one registered before
+//the routes it guards never sees their failures.
+app.use(errorHandler);
 
 export default app;

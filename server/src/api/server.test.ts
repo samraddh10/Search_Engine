@@ -1,4 +1,3 @@
-import { DEFAULT_PAGE_SIZE } from "shared";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
 import { closePg } from "../db/pg.js";
@@ -20,13 +19,14 @@ describe("GET /api/health", () => {
     });
   });
 
-  // Guards the cross-workspace contract: this value crosses the shared/ ESM boundary, so
-  // the test fails if that resolution ever breaks.
-  // Test 2 — Cross-workspace import sanity check
-  it("serves DEFAULT_PAGE_SIZE from the shared workspace", async () => {
+  // `defaultPageSize` and its assertion lived here from 0.2 as a proof that the shared/
+  // workspace resolves across the ESM boundary. It never belonged on a health check, and the
+  // real endpoints now exercise that import far better: /search reads MAX_PAGE_SIZE and
+  // DEFAULT_PAGE_SIZE out of shared/ on every request.
+  it("does not echo internal configuration", async () => {
     const res = await request(app).get("/api/health");
 
-    expect(res.body.defaultPageSize).toBe(DEFAULT_PAGE_SIZE);
+    expect(res.body.defaultPageSize).toBeUndefined();
   });
 
   // Test 3 — Content-type check

@@ -1,4 +1,4 @@
-import app from "./api/server.js";
+import app, { suggestIndex } from "./api/server.js";
 import { config } from "./config.js";
 import { closePg } from "./db/pg.js";
 import { closeRedis, connectRedis } from "./db/redis.js";
@@ -14,6 +14,13 @@ async function main() {
 
   const server = app.listen(config.PORT, () => {
     console.log(`Server listening on http://localhost:${config.PORT}`);
+  });
+
+  //Deliberately not awaited: the first person to type gets a warm index, and `listen` never
+  //waits on Postgres to accept traffic. The `.catch` is what keeps a failed startup read from
+  //becoming an unhandled rejection — `suggest()` will rebuild on demand anyway.
+  void suggestIndex.refresh().catch((err: unknown) => {
+    console.error("Failed to warm the suggest index; it will build on first use", err);
   });
 
   //A second Ctrl-C while the first shutdown is still draining would run this twice, and

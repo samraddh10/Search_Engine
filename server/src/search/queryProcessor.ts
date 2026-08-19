@@ -1,4 +1,4 @@
-import type { SearchMatch } from "shared";
+import type { SearchMatch, SearchStatus } from "shared";
 import { DEFAULT_PAGE_SIZE } from "shared";
 import { readCorpusStats } from "../indexer/indexStore.js";
 import type { CorpusStats } from "../indexer/invertedIndex.js";
@@ -43,14 +43,13 @@ export interface RankedResult {
 /**
  * Zero results is three different situations and the service says which.
  *
- * A stopword-only query, an empty index, and a real query nothing matches all produce an empty
- * list, and collapsing them makes the UI say "no results for *the*" when the honest answer is
- * that the query never reached the index. All three are HTTP 200 when 3.5 renders them: none is
- * a client error, and a stopword-only query is a well-formed request with a boring answer.
- *
- * "No matches" is not a status — it is `ok` with `total: 0`.
+ * The union itself moved to `shared/` in 3.5: once `SearchResponse` carries a `status`, this is
+ * a contract the client is written against rather than a `search/`-local shape, and two copies
+ * of a three-member union is exactly the drift the workspace exists to prevent. Re-exported here
+ * because every existing consumer imports it from this module, and the rationale lives on the
+ * declaration in `shared/types.ts`.
  */
-export type SearchStatus = "ok" | "empty-index" | "no-searchable-terms";
+export type { SearchStatus };
 
 interface SearchPageBase {
   query: string;
