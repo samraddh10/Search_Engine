@@ -1,93 +1,58 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
+@import "tailwindcss";
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/*
+ * Design tokens.
+ *
+ * Declared through `@theme` so each one is reachable as a Tailwind utility
+ * (`bg-bg`, `text-heading`, `border-border`) instead of as a hand-written `var()`
+ * in component CSS. `static` forces every variable into the output even when no
+ * utility references it yet — without it Tailwind tree-shakes the unused ones, and
+ * the dark-mode block below would then be overriding variables that do not exist.
+ */
+@theme static {
+  --color-bg: #ffffff;
+  --color-text: #6b6375;
+  --color-heading: #08060d;
+  --color-border: #e5e4e7;
+  --color-code-bg: #f4f3ec;
+  --color-accent: #aa3bff;
+  --color-accent-bg: rgb(170 59 255 / 0.1);
+  --color-accent-border: rgb(170 59 255 / 0.5);
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
 }
 
+/*
+ * Dark mode reassigns the token values rather than restating the utilities, so
+ * everything built from a token follows for free. Deliberately unlayered: `@theme`
+ * emits into Tailwind's `theme` layer, and an unlayered rule outranks a layered one
+ * regardless of source order.
+ */
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
+    --color-bg: #16171d;
+    --color-text: #9ca3af;
+    --color-heading: #f3f4f6;
+    --color-border: #2e303a;
+    --color-code-bg: #1f2028;
+    --color-accent: #c084fc;
+    --color-accent-bg: rgb(192 132 252 / 0.15);
+    --color-accent-border: rgb(192 132 252 / 0.5);
   }
 }
 
-body {
-  margin: 0;
-}
-
-#root {
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+@layer base {
+  :root {
+    color-scheme: light dark;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-}
 
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+  /* Paints the overscroll area, which the shell's own min-h-svh does not reach. */
+  body {
+    background-color: var(--color-bg);
   }
-}
-
-p {
-  margin: 0;
-}
-
-code {
-  font-family: var(--mono);
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  border-radius: 4px;
-  color: var(--text-h);
-  background: var(--code-bg);
 }
