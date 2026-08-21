@@ -1,8 +1,5 @@
 import { Link, Outlet } from "react-router";
 
-//The shell every page renders into: header, a centred content column, and a footer pinned
-//to the bottom on short pages. Held together by flex rather than by a fixed height, so a
-//long results list scrolls normally and a one-line empty state still fills the viewport.
 export function AppLayout() {
   return (
     <div className="flex min-h-svh flex-col bg-bg font-sans text-text">
