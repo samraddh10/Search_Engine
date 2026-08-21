@@ -50,7 +50,9 @@
       "Bash(git commit -m 'feat\\(client\\): add the typed search API client *)",
       "PowerShell(git add client/src/hooks client/src/services/queryClient.ts)",
       "PowerShell(git add client/package.json)",
-      "PowerShell(git add package-lock.json)"
+      "PowerShell(git add package-lock.json)",
+      "PowerShell(git add client/index.html client/src/components client/src/index.css client/src/pages client/src/hooks/useDocumentTitle.ts client/src/lib/searchMessages.ts)",
+      "Bash(git commit -m 'feat\\(client\\): make the results UI accessible' -m 'Replace the section-wide live region with a single status line that says what *)"
     ]
   }
 }
