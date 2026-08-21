@@ -46,7 +46,11 @@
       "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 status -sb)",
       "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 diff -- .claude/settings.json client/package.json server/package.json client/vite.config.ts server/src/index.ts)",
       "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 diff -- server/src/api/server.ts server/src/search/cache.ts server/src/search/queryProcessor.ts shared/src/types.ts)",
-      "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 diff -- client/src/App.tsx client/src/main.tsx)"
+      "PowerShell(git -C c:\\\\Users\\\\shriy\\\\Downloads\\\\Search_Engine2 diff -- client/src/App.tsx client/src/main.tsx)",
+      "Bash(git commit -m 'feat\\(client\\): add the typed search API client *)",
+      "PowerShell(git add client/src/hooks client/src/services/queryClient.ts)",
+      "PowerShell(git add client/package.json)",
+      "PowerShell(git add package-lock.json)"
     ]
   }
 }
