@@ -27,7 +27,13 @@ export function Suggestions({ typed, completions }: SuggestionsProps) {
         <span className="shrink-0 text-xs text-text">search this text</span>
       </ComboboxOption>
 
-      <div className="my-1 border-t border-border" />
+      {/*
+        `role="presentation"` and `aria-hidden`, because a listbox's children are supposed to
+        be options: a bare `<div>` in here is a node an assistive technology has to decide
+        what to do with, and some count it when reporting "2 of 9". It is a line between the
+        text you typed and the words the index is offering — decoration, and it says so.
+      */}
+      <div role="presentation" aria-hidden="true" className="my-1 border-t border-border" />
 
       {completions.map((suggestion) => (
         <ComboboxOption

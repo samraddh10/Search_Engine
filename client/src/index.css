@@ -55,4 +55,40 @@
   body {
     background-color: var(--color-bg);
   }
+
+  /*
+   * One focus ring for the whole app, declared once rather than as a utility repeated on
+   * every interactive element — a per-element class is a thing a later component can
+   * forget, and the failure is invisible to anyone using a mouse. `:focus-visible` rather
+   * than `:focus` so a click does not leave a ring behind, and the accent token so it
+   * follows dark mode with everything else.
+   *
+   * Consequence to keep in mind: no element may set `outline-none` without replacing the
+   * indicator itself. The search input used to, and its border-colour change was the only
+   * cue a keyboard user got.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * Reduced motion. Unlayered and `!important`, deliberately: this has to beat Tailwind's
+ * `animate-pulse` and every `transition-*` utility wherever a component happens to put one,
+ * including ones no later phase has written yet.
+ *
+ * Durations are near-zero rather than `none` so animation and transition *events* still
+ * fire — a `0s` transition never emits `transitionend`, and code that waits for one would
+ * hang for exactly the users who asked for less motion.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

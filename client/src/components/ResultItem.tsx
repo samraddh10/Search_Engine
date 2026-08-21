@@ -19,7 +19,7 @@ export function ResultItem({ result }: ResultItemProps) {
     <li className="flex flex-col gap-1">
       <a
         href={result.url}
-        className="text-lg text-heading underline-offset-4 hover:text-accent hover:underline"
+        className="break-words text-lg text-heading underline-offset-4 hover:text-accent hover:underline"
       >
         {/* A crawled page can have no `<title>`; the URL is the only name it has. */}
         {result.title || readableUrl(result.url)}
@@ -27,7 +27,7 @@ export function ResultItem({ result }: ResultItemProps) {
 
       <p className="truncate text-sm text-text">{readableUrl(result.url)}</p>
 
-      <p className="text-text">
+      <p className="break-words text-text">
         {segments.map((segment, index) =>
           segment.highlighted ? (
             //`index` is a sound key here: the array is derived from this render's props and

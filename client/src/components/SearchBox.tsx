@@ -98,7 +98,7 @@ export function SearchBox({ query, onSubmit }: SearchBoxProps) {
             autoFocus={query === ""}
             placeholder="Search the indexed corpus"
             aria-label="Search query"
-            className="w-full flex-1 rounded-lg border border-border bg-transparent px-4 py-3 text-heading outline-none transition-colors placeholder:text-text focus-visible:border-accent-border"
+            className="w-full flex-1 rounded-lg border border-border bg-transparent px-4 py-3 text-heading transition-colors placeholder:text-text focus-visible:border-accent-border"
           />
 
           <button
