@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { USER_AGENT_TOKEN } from "./fetcher.js";
 import { PARSE_DEFAULTS, parseHtml } from "./parser.js";
 
 const PAGE_URL = "http://example.com/docs/page";
@@ -322,7 +323,7 @@ describe("parseHtml — metadata", () => {
     const parsed = parse(
       doc(
         '<meta name="robots" content="noindex, nofollow">' +
-          '<meta name="SearchEngine2Bot" content="all">',
+          `<meta name="${USER_AGENT_TOKEN}" content="all">`,
         "",
       ),
     );

@@ -15,9 +15,17 @@
   --color-heading: #08060d;
   --color-border: #e5e4e7;
   --color-code-bg: #f4f3ec;
-  --color-accent: #aa3bff;
-  --color-accent-bg: rgb(170 59 255 / 0.1);
-  --color-accent-border: rgb(170 59 255 / 0.5);
+  /*
+   * The brand blue, in the one form the light theme can use it. The logo's #6FA2FF scores
+   * 2.53:1 on white — well under the 4.5:1 AA needs for text, and `--color-accent` is the
+   * Search button's label, every result link and the focus ring. #2563EB is the same hue
+   * darkened until it passes (5.17:1), and is in fact a better indicator than the #aa3bff
+   * purple it replaces, which sat at 4.39:1 and quietly failed. The dark theme below uses
+   * the logo colour untouched, where it scores 7.06:1.
+   */
+  --color-accent: #2563eb;
+  --color-accent-bg: rgb(37 99 235 / 0.1);
+  --color-accent-border: rgb(37 99 235 / 0.5);
 
   --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, Consolas, monospace;
@@ -36,9 +44,10 @@
     --color-heading: #f3f4f6;
     --color-border: #2e303a;
     --color-code-bg: #1f2028;
-    --color-accent: #c084fc;
-    --color-accent-bg: rgb(192 132 252 / 0.15);
-    --color-accent-border: rgb(192 132 252 / 0.5);
+    /* Exactly the logo's blue — 7.06:1 against this background. */
+    --color-accent: #6fa2ff;
+    --color-accent-bg: rgb(111 162 255 / 0.15);
+    --color-accent-border: rgb(111 162 255 / 0.5);
   }
 }
 

@@ -10,7 +10,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
-import { fetchPage } from "./fetcher.js";
+import { fetchPage, USER_AGENT_TOKEN } from "./fetcher.js";
 
 const servers: Server[] = [];
 
@@ -87,7 +87,7 @@ describe("fetchPage — the happy path", () => {
 
     await fetchPage(origin);
 
-    expect(seen?.["user-agent"]).toContain("SearchEngine2Bot");
+    expect(seen?.["user-agent"]).toContain(USER_AGENT_TOKEN);
     expect(seen?.accept).toContain("text/html");
   });
 

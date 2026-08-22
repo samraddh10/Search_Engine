@@ -1,15 +1,15 @@
 import { decodeBody, parseCharsetParam } from "./charset.js";
 import { parseHttpUrl } from "./url.js";
 
-//The bare product token. robots.txt groups are written `User-agent: SearchEngine2Bot`, and
+//The bare product token. robots.txt groups are written `User-agent: WispBot`, and
 //matching happens on that token alone — the full header below would never match one. The
 //header is *built* from the token so the two can't drift apart; exported because robots.ts
 //needs the token and duplicating the string there is how they'd silently disagree.
-export const USER_AGENT_TOKEN = "SearchEngine2Bot";
+export const USER_AGENT_TOKEN = "WispBot";
 
 //sent on every request so site owners can identify the bot
 export const USER_AGENT =
-  `${USER_AGENT_TOKEN}/0.1 (+https://github.com/search-engine2; educational crawler)`;
+  `${USER_AGENT_TOKEN}/0.1 (+https://github.com/wisp; educational crawler)`;
 
 //The default allowlist — what a *page* fetch accepts. Overridable per call (see
 //FetchOptions.allowedContentTypes) because robots.txt is text/plain, and a plain-text file

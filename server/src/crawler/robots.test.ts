@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { USER_AGENT_TOKEN } from "./fetcher.js";
 import { checkRobots, clearRobotsCache } from "./robots.js";
 
 const servers: Server[] = [];
@@ -104,7 +105,7 @@ describe("checkRobots — allow and disallow decisions", () => {
         "User-agent: *",
         "Disallow: /",
         "",
-        "User-agent: SearchEngine2Bot",
+        `User-agent: ${USER_AGENT_TOKEN}`,
         "Disallow: /private/",
         "",
       ].join("\n"),

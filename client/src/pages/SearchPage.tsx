@@ -79,12 +79,32 @@ export function SearchPage() {
         the tree. Branching the whole page on `query` would remount the input on the first
         search and drop focus out of it mid-interaction.
       */}
-      <h1
-        className={
-          query ? "sr-only" : "text-4xl font-medium tracking-tight text-heading"
-        }
-      >
-        {query ? `Search results for ${query}` : "Search"}
+      <h1 className={query ? "sr-only" : ""}>
+        {query ? (
+          `Search results for ${query}`
+        ) : (
+          /*
+            Two files rather than one, because the wordmark is a solid colour baked into
+            pixels: the white lockup vanishes on the light theme and a dark one vanishes on
+            the dark theme. `<picture>` swaps them on `prefers-color-scheme`, which is the
+            same signal `index.css` themes everything else with — there is no manual toggle
+            to keep in sync. The blue mark is identical in both; only the wordmark changes.
+
+            `alt` is the heading's text, so the accessible name of this page is "wisp".
+            Intrinsic width/height are declared so the row does not reflow once the image
+            loads, and the height is then set in CSS.
+          */
+          <picture>
+            <source srcSet="/wisp-dark.png" media="(prefers-color-scheme: dark)" />
+            <img
+              src="/wisp-light.png"
+              alt="wisp"
+              width={296}
+              height={89}
+              className="h-12 w-auto"
+            />
+          </picture>
+        )}
       </h1>
 
       <SearchBox query={query} onSubmit={submitQuery} />

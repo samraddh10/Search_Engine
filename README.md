@@ -1,4 +1,4 @@
-# Search Engine
+# wisp
 
 A working search engine built from scratch in TypeScript — crawler, text pipeline, inverted
 index and BM25 ranking, all hand-written. No Elasticsearch, no Lucene, no search libraries of
@@ -7,7 +7,7 @@ any kind.
 It currently indexes **1,846 pages** of developer documentation from MDN, the Python standard
 library and react.dev: **26,478 terms**, **441,647 postings**, answering queries in **12–16 ms**.
 
-![Search results for "closure scope"](docs/images/results.png)
+![wisp search results for "closure scope"](docs/images/results.png)
 
 Search `closure scope` and the top result is MDN's *Closures* guide. Nothing about that is
 configured — the ranker weighed `closur` (appearing in 25 documents) against `scope` (87),
