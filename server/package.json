@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "migrate": "node-pg-migrate up -m db/migrations --envPath .env",
     "migrate:down": "node-pg-migrate down -m db/migrations --envPath .env",
+    "migrate:deploy": "node-pg-migrate up -m db/migrations",
     "migrate:create": "node-pg-migrate create -m db/migrations -j js",
     "seed": "tsx src/db/seed.ts",
     "crawl": "tsx src/crawler/cli.ts",
