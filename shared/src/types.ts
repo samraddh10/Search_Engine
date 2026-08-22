@@ -78,10 +78,25 @@ export interface SearchResponse {
  * Deliberately not an observability surface: no cache hit rates, no index size, no uptime.
  * Phase 5.4 adds numbers once it has measured something worth reporting.
  */
+/**
+ * One site in the corpus, as a host and how many of its pages are indexed.
+ *
+ * Derived from `documents.url` rather than configured anywhere, so it cannot disagree with
+ * what was actually crawled — the client says "959 pages from developer.mozilla.org" because
+ * that is what is in the table, not because someone wrote it in a component.
+ */
+export interface CorpusSource {
+  /** Hostname, e.g. `developer.mozilla.org`. */
+  host: string;
+  documents: number;
+}
+
 export interface Statistics {
   totalDocs: number;
   totalTokens: number;
   avgDocLen: number;
+  /** Largest first. Capped server-side; empty when nothing is crawled. */
+  sources: CorpusSource[];
   /**
    * ISO-8601, or `null` when the corpus has never been indexed.
    *

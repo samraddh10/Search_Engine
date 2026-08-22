@@ -10,7 +10,7 @@ import {
 import { z } from "zod";
 import { checkPgHealth } from "../db/pg.js";
 import { checkRedisHealth } from "../db/redis.js";
-import { readCorpusStats } from "../indexer/indexStore.js";
+import { readCorpusSources, readCorpusStats } from "../indexer/indexStore.js";
 import { processQuery } from "../processing/pipeline.js";
 import { uniqueTerms } from "../ranking/scorer.js";
 import type { Queryable } from "../ranking/searchStore.js";
@@ -140,12 +140,18 @@ export function createRouter(deps: ApiDeps): Router {
     "/statistics",
     searchLimiter,
     asyncRoute(async (_req, res) => {
-      const stats = await readCorpusStats(deps.db);
+      //Both reads are independent single queries, so they go together rather than in
+      //sequence — the endpoint is on the empty state's critical path.
+      const [stats, sources] = await Promise.all([
+        readCorpusStats(deps.db),
+        readCorpusSources(deps.db),
+      ]);
 
       const body: Statistics = {
         totalDocs: stats.totalDocs,
         totalTokens: stats.totalTokens,
         avgDocLen: stats.avgDocLen,
+        sources,
         //`readCorpusStats` reports a never-indexed corpus as `0`, which would render as
         //1970-01-01 — a wrong answer where `null` is a missing one.
         updatedAt: stats.updatedAt === 0 ? null : new Date(stats.updatedAt).toISOString(),

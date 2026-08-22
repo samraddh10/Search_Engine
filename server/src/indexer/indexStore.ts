@@ -16,6 +16,7 @@ import type { PoolClient } from "pg";
 //Imports the from function from the pg-copy-streams library (renamed to copyFrom to avoid clashing with the JS keyword from) 
 //  — wraps SQL command into a writable stream that Postgres will bulk-load data through.
 import { from as copyFrom } from "pg-copy-streams";
+import type { CorpusSource } from "shared";
 import type { BuiltIndex, CorpusStats, IndexableDocument } from "./invertedIndex.js";
 
 export const INDEX_STORE_DEFAULTS = {
@@ -214,6 +215,43 @@ export async function readCorpusStats(db: DocumentSource): Promise<PersistedCorp
     avgDocLen: row.avg_doc_len,
     updatedAt: row.updated_at.getTime(),
   };
+}
+
+/** How many sites to name. Enough to describe a corpus, few enough to read in one line. */
+export const CORPUS_SOURCE_LIMIT = 5;
+
+/**
+ * Which sites the corpus is made of, largest first.
+ *
+ * Exists because "1,437 documents indexed" tells a first-time visitor nothing they can act
+ * on — a search box over an unnamed corpus is a prompt with no context, and they will type
+ * something generic, get nothing, and conclude it is broken. Naming the hosts is the
+ * cheapest thing that turns the number into an invitation.
+ *
+ * Derived from `documents.url` rather than configured, so it cannot drift from what was
+ * actually crawled. `split_part(url, '/', 3)` is the host because every stored URL has been
+ * through `normalizeUrl` and therefore always has a scheme — 1.3 guarantees the shape this
+ * relies on.
+ *
+ * A sequential scan with a grouping, deliberately unindexed: it runs once per empty-state
+ * render on a table that also holds `content_text`, which is the expensive part, and at
+ * corpus sizes this project targets it is single-digit milliseconds. If it ever stops being
+ * noise the answer is a materialized count refreshed by `writeIndex`, not an index on an
+ * expression.
+ */
+export async function readCorpusSources(db: DocumentSource): Promise<CorpusSource[]> {
+  const { rows } = await db.query<{ host: string; documents: string }>(
+    `SELECT split_part(url, '/', 3) AS host, count(*) AS documents
+       FROM documents
+      GROUP BY 1
+      ORDER BY count(*) DESC, host ASC
+      LIMIT $1`,
+    [CORPUS_SOURCE_LIMIT],
+  );
+
+  //`count(*)` is BIGINT, which node-postgres returns as a string — the same trap
+  //`total_tokens` documents above, converted in the one place that reads it.
+  return rows.map((row) => ({ host: row.host, documents: Number(row.documents) }));
 }
 
 //What it does: inserts every term from the built index into the terms table, and returns a map from term string 

@@ -26,6 +26,13 @@ export function StatsBar() {
 
   return (
     <p className="text-sm text-text">
+      {/*
+        The sources come first because they are the only part a visitor can act on: "959 pages
+        from developer.mozilla.org" tells them what to type, where "1,437 documents" tells them
+        a size and nothing else. Derived server-side from `documents.url`, so this sentence
+        cannot claim a site that was never crawled.
+      */}
+      {data.sources.length > 0 && <>Searching {formatSources(data.sources)} · </>}
       {formatCount(data.totalDocs)} document{data.totalDocs === 1 ? "" : "s"} ·{" "}
       {formatCount(data.totalTokens)} tokens · {data.avgDocLen.toFixed(1)} words per document
       {/*
@@ -37,6 +44,20 @@ export function StatsBar() {
       {data.updatedAt !== null && ` · indexed ${formatTimestamp(data.updatedAt)}`}
     </p>
   );
+}
+
+/**
+ * "developer.mozilla.org, docs.python.org and react.dev".
+ *
+ * Hosts rather than page counts per host: the counts are already implied by the total beside
+ * them, and five "959 pages from X" clauses is a paragraph where this is a sentence.
+ */
+function formatSources(sources: { host: string; documents: number }[]): string {
+  const hosts = sources.map((source) => source.host);
+
+  if (hosts.length === 1) return hosts[0]!;
+
+  return `${hosts.slice(0, -1).join(", ")} and ${hosts[hosts.length - 1]}`;
 }
 
 /** Thousands separators in the reader's locale; a bare `43187` is hard to size at a glance. */

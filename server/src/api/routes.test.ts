@@ -231,6 +231,39 @@ describe("GET /api/statistics", () => {
 
     const res = await request(app).get("/api/statistics");
 
-    expect(res.body).toEqual({ totalDocs: 0, totalTokens: 0, avgDocLen: 0, updatedAt: null });
+    expect(res.body).toMatchObject({
+      totalDocs: 0,
+      totalTokens: 0,
+      avgDocLen: 0,
+      updatedAt: null,
+    });
+  });
+
+  //`sources` reads `documents` while the totals read `corpus_stats`, so the two can disagree
+  //— and this is the case where they do. The fixture rows exist and have never been indexed,
+  //which is exactly the state a crawl leaves behind: pages present, nothing searchable yet.
+  //Asserting the disagreement rather than papering over it, because a `sources` that followed
+  //`corpus_stats` would go silent for the whole window this endpoint is most worth reading.
+  it("names the crawled hosts even when the corpus has never been indexed", async () => {
+    await pgPool.query("DELETE FROM corpus_stats");
+
+    const res = await request(app).get("/api/statistics");
+
+    expect(res.body.totalDocs).toBe(0);
+    expect(res.body.sources).toEqual([{ host: "example.test", documents: BODIES.length }]);
+  });
+
+  it("orders sources by page count, largest first", async () => {
+    await pgPool.query(
+      `INSERT INTO documents (url, title, content_text, content_hash, http_status)
+       VALUES ('https://second.test/a', 't', 'body', 'h-second-a', 200)`,
+    );
+
+    const res = await request(app).get("/api/statistics");
+
+    expect(res.body.sources.map((s: { host: string }) => s.host)).toEqual([
+      "example.test",
+      "second.test",
+    ]);
   });
 });
