@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { EmptyResults } from "../components/EmptyResults.tsx";
+import { ExampleQueries } from "../components/ExampleQueries.tsx";
 import { Pagination } from "../components/Pagination.tsx";
 import { ResultList } from "../components/ResultList.tsx";
 import { ResultsSkeleton } from "../components/ResultsSkeleton.tsx";
@@ -96,6 +97,7 @@ export function SearchPage() {
               BM25 over a custom inverted index — no Elasticsearch.
             </p>
             <StatsBar />
+            <ExampleQueries onSelect={submitQuery} />
           </div>
         )}
 
